@@ -6,7 +6,7 @@
 
 **日淘上新提醒**
 
-替你盯着日本二手站。谷子、手办、周边，新货一上架，<br>封面、价格、链接一起推到你手机上。
+claude搓出来的日淘上新提醒程序。替你盯着日本二手站。谷子、手办、周边，新货一上架，<br>封面、价格、链接一起推到你手机上。
 
 [![测试](https://github.com/lxy3312/goodsmare/actions/workflows/test.yml/badge.svg)](https://github.com/lxy3312/goodsmare/actions/workflows/test.yml)
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
