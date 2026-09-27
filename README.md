@@ -8,6 +8,7 @@
 
 替你盯着日本二手站。谷子、手办、周边，新货一上架，<br>封面、价格、链接一起推到你手机上。
 
+[![测试](https://github.com/lxy3312/goodsmare/actions/workflows/test.yml/badge.svg)](https://github.com/lxy3312/goodsmare/actions/workflows/test.yml)
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 ![无需安装依赖](https://img.shields.io/badge/%E4%BE%9D%E8%B5%96-%E6%97%A0-e0457b)
 [![MIT](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-555)](LICENSE)
