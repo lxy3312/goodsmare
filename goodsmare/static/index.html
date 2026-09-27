@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 商品图都是外链，不带 Referer 才不会被防盗链挡住 -->
+<meta name="referrer" content="no-referrer">
+<title>goodsmare</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23e0457b'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='white' stroke-width='2.5'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='white'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #f7f4f2; --panel: #ffffff; --ink: #231f20; --muted: #85797b; --line: #ebe3e0;
+  --accent: #e0457b; --accent-ink: #ffffff; --accent-soft: #fde8ef;
+  --ok: #1f9d6a; --warn: #d98a00; --err: #d6423b; --shadow: 0 1px 2px rgba(60,30,40,.06), 0 4px 16px rgba(60,30,40,.06);
+  --s-mercari: #e8453c; --s-yahoo_auction: #e79a10; --s-yahoo_flea: #d9559b;
+  --s-rakuma: #7a4de0; --s-surugaya: #2f7de1; --s-mandarake: #1d9a6c;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161316; --panel: #211d21; --ink: #f1eaec; --muted: #a0969a; --line: #342e33;
+    --accent: #f06292; --accent-ink: #1b0f14; --accent-soft: #3a2230;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25); color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.55 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+a { color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.primary:hover { filter: brightness(1.05); }
+button.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+button.ghost:hover { color: var(--ink); }
+button.danger:hover { color: var(--err); border-color: var(--err); }
+button:disabled { opacity: .5; cursor: default; }
+input[type=text], input[type=number], input[type=password], select, textarea {
+  width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 7px 10px; outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+label.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+
+header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.bar { max-width: 1200px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; letter-spacing: .5px; }
+.brand svg { width: 26px; height: 26px; }
+.brand .tagline { font-size: 12px; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-left: 2px; }
+.status { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.spacer { flex: 1; }
+.tabs { max-width: 1200px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; overflow-x: auto; }
+.tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--muted); white-space: nowrap; }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.count { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); font-size: 12px; text-align: center; margin-left: 4px; }
+
+main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+section[hidden] { display: none; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 3px 11px; font-size: 13px; cursor: pointer; }
+.chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--muted); }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
+.dot.pulse { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); text-decoration: none; display: flex; flex-direction: column; transition: transform .12s; position: relative; }
+.card:hover { transform: translateY(-2px); }
+.card.fresh { outline: 2px solid var(--accent); }
+.thumb { aspect-ratio: 1; background: var(--line); position: relative; overflow: hidden; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; position: relative; z-index: 1; }
+.thumb .noimg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+.badge { position: absolute; z-index: 2; top: 8px; left: 8px; font-size: 11px; font-weight: 600; color: #fff; padding: 2px 7px; border-radius: 6px; background: var(--muted); }
+.badge.drop { left: auto; right: 8px; background: var(--ok); }
+.card .body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 3px; flex: 1; }
+.card .title { font-size: 13px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.8em; }
+.price { font-weight: 700; color: var(--accent); font-size: 16px; }
+.price small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 4px; }
+.price s { color: var(--muted); font-weight: 400; font-size: 12px; margin-right: 4px; }
+.meta { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.empty { text-align: center; color: var(--muted); padding: 60px 16px; line-height: 1.9; }
+.empty b { color: var(--ink); }
+.more { display: block; margin: 18px auto 0; }
+
+.list { display: flex; flex-direction: column; gap: 10px; }
+.panel { background: var(--panel); border-radius: 12px; box-shadow: var(--shadow); padding: 14px 16px; }
+.watch.off { opacity: .6; }
+.watch-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.watch-head b { font-size: 15px; }
+.kw { color: var(--muted); }
+.watch-meta { color: var(--muted); font-size: 12px; margin: 4px 0 8px; }
+.srcs { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 4px 16px; font-size: 12px; }
+.src { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.src .dot { transform: translateY(-1px); }
+.src b { white-space: nowrap; flex: none; }
+.src span.msg { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+
+.switch { position: relative; width: 36px; height: 20px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; background: var(--line); border-radius: 20px; transition: .15s; cursor: pointer; }
+.switch span::before { content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: .15s; }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::before { transform: translateX(16px); }
+
+dialog { border: 0; border-radius: 14px; padding: 0; width: min(680px, calc(100vw - 24px)); max-height: calc(100vh - 32px); background: var(--panel); color: var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+dialog::backdrop { background: rgba(20,10,15,.45); }
+.dlg-head { padding: 14px 18px; border-bottom: 1px solid var(--line); font-weight: 700; display: flex; align-items: center; }
+.dlg-body { padding: 16px 18px; display: grid; gap: 12px; }
+.dlg-foot { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; position: sticky; bottom: 0; background: var(--panel); }
+.field > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.field > small { display: block; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.checks { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.gloss { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.gloss button { font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+.gloss button em { font-style: normal; color: var(--muted); margin-left: 3px; }
+.preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+.preview .card .title { font-size: 12px; }
+.preview .card.out { opacity: .35; }
+.preview .price { font-size: 13px; }
+.hint { color: var(--muted); font-size: 12px; }
+
+.settings { display: grid; gap: 14px; max-width: 560px; }
+pre.logs { background: var(--panel); border-radius: 12px; padding: 12px 14px; font-size: 12px; line-height: 1.6; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; color: var(--muted); box-shadow: var(--shadow); margin: 0; }
+h3 { font-size: 14px; margin: 22px 0 10px; }
+
+#toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 10px; opacity: 0; transition: .2s; pointer-events: none; z-index: 20; max-width: calc(100vw - 32px); font-size: 13px; }
+#toast.show { opacity: 1; transform: translateX(-50%); }
+#toast.bad { background: var(--err); color: #fff; }
+@media (max-width: 560px) {
+  .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .row2 { grid-template-columns: 1fr; }
+  .status .long, .brand .tagline { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="var(--accent)"/><circle cx="16" cy="16" r="8" fill="none" stroke="#fff" stroke-width="2.5"/><path d="M16 16 L26 8" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/><circle cx="16" cy="16" r="2.5" fill="#fff"/></svg>
+      goodsmare<span class="tagline">日淘上新提醒</span>
+    </div>
+    <div class="status" id="status"><span class="dot"></span>连接中…</div>
+    <div class="spacer"></div>
+    <button id="scanBtn">立即扫描</button>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="feed" class="on">上新<span class="count" id="newCount" hidden></span></button>
+    <button data-tab="watches">关注<span class="count" id="watchCount"></span></button>
+    <button data-tab="channels">推送</button>
+    <button data-tab="settings">设置</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-feed">
+    <div class="toolbar">
+      <div class="chips" id="feedChips"></div>
+      <div class="spacer"></div>
+      <select id="feedSource" style="width:auto"></select>
+    </div>
+    <div class="grid" id="feed"></div>
+    <div class="empty" id="feedEmpty" hidden></div>
+    <button class="more" id="moreBtn" hidden>加载更多</button>
+  </section>
+
+  <section id="tab-watches" hidden>
+    <div class="toolbar">
+      <button class="primary" id="addWatch">+ 新建关注</button>
+      <span class="hint">一个关注 = 一个搜索词。新加的关注第一次扫描只记下现有商品，之后新上架的才推送。</span>
+    </div>
+    <div class="list" id="watchList"></div>
+  </section>
+
+  <section id="tab-channels" hidden>
+    <div class="toolbar">
+      <button class="primary" id="addChannel">+ 添加推送</button>
+      <span class="hint">每轮扫描到的新商品合成一条推送；Bark、ntfy、Telegram 逐条推，点开直达商品页。Server酱、PushPlus 在微信里是一张文字卡片，点开才有封面和商品链接。</span>
+    </div>
+    <div class="list" id="channelList"></div>
+    <h3>浏览器通知</h3>
+    <div class="panel" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      <label class="check"><input type="checkbox" id="browserNotify"> 开着这个网页时弹系统通知</label>
+      <label class="check"><input type="checkbox" id="beep"> 提示音</label>
+      <span class="hint" id="notifyHint"></span>
+    </div>
+  </section>
+
+  <section id="tab-settings" hidden>
+    <div class="settings panel">
+      <div class="row2">
+        <label class="field"><span>扫描间隔（秒）</span><input type="number" id="setInterval" min="30"><small>最少 30。关注多、网站多时别太小，容易被封 IP。</small></label>
+        <label class="field"><span>同站请求间隔（秒）</span><input type="number" id="setGap" min="0.5" step="0.5"><small>同一个网站两次请求之间至少等多久。</small></label>
+      </div>
+      <label class="field"><span>代理</span><input type="text" id="setProxy" placeholder="例如 http://127.0.0.1:7890，留空则直连 / 用系统环境变量"><small>某些网站在国内连不上或被拦时填。支持 HTTP 代理（Clash 的混合端口可以）。</small></label>
+      <div class="row2">
+        <label class="field"><span>汇率（1 日元 = ? 元）</span><input type="number" id="setRate" step="0.0001"><small id="rateHint"></small></label>
+        <label class="field" style="align-self:center"><label class="check"><input type="checkbox" id="setAutoRate"> 自动获取汇率</label></label>
+      </div>
+      <div><button class="primary" id="saveSettings">保存设置</button></div>
+    </div>
+    <h3>运行日志</h3>
+    <pre class="logs" id="logs"></pre>
+    <h3>其他</h3>
+    <div class="panel" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="danger" id="clearFeed">清空上新记录</button>
+      <span class="hint" id="version"></span>
+    </div>
+  </section>
+</main>
+
+<dialog id="watchDlg">
+  <form method="dialog" id="watchForm">
+    <div class="dlg-head"><span id="watchDlgTitle">新建关注</span><div class="spacer"></div><button class="ghost" value="cancel" formnovalidate>✕</button></div>
+    <div class="dlg-body">
+      <label class="field"><span>搜索关键词（日文效果最好）</span><input type="text" name="keyword" required placeholder="例如：五条悟 缶バッジ">
+        <div class="gloss" id="gloss"></div>
+      </label>
+      <label class="field"><span>显示名称</span><input type="text" name="name" placeholder="不填就用关键词"></label>
+      <div class="field"><span>在哪些网站找</span><div class="checks" id="srcChecks"></div></div>
+      <div class="row2">
+        <label class="field"><span>最低价（日元）</span><input type="number" name="price_min" min="0" placeholder="不限"><small class="cnyHint"></small></label>
+        <label class="field"><span>最高价（日元）</span><input type="number" name="price_max" min="0" placeholder="不限"><small class="cnyHint"></small></label>
+      </div>
+      <div class="row2">
+        <label class="field"><span>标题必须包含（逗号分隔）</span><input type="text" name="must" placeholder="例如：五条"><small>煤炉的搜索很模糊，会混进不相干的，用它过滤。</small></label>
+        <label class="field"><span>标题不能包含（逗号分隔）</span><input type="text" name="exclude" placeholder="例如：まとめ売り, 空箱"></label>
+      </div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" name="price_drop"> 见过的商品降价了也提醒</label>
+        <label class="check"><input type="checkbox" name="enabled" checked> 启用</label>
+      </div>
+      <div id="previewBox" hidden>
+        <div class="toolbar" style="margin:4px 0 8px"><b>预览</b><div class="chips" id="previewSrc"></div></div>
+        <div class="hint" id="previewInfo"></div>
+        <div class="preview" id="preview"></div>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" id="previewBtn">先搜一下看看</button>
+      <div class="spacer"></div>
+      <button value="cancel" formnovalidate>取消</button>
+      <button class="primary" value="save" id="saveWatch">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="chDlg">
+  <form method="dialog" id="chForm">
+    <div class="dlg-head"><span>推送渠道</span><div class="spacer"></div><button class="ghost" value="cancel" formnovalidate>✕</button></div>
+    <div class="dlg-body">
+      <label class="field"><span>方式</span><select name="type" id="chType"></select></label>
+      <label class="field"><span>备注名</span><input type="text" name="name" placeholder="可不填"></label>
+      <div id="chFields" style="display:grid;gap:12px"></div>
+      <label class="check"><input type="checkbox" name="enabled" checked> 启用</label>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" id="chTest">发一条测试</button>
+      <div class="spacer"></div>
+      <button value="cancel" formnovalidate>取消</button>
+      <button class="primary" value="save">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("goodsmare." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("goodsmare." + k, JSON.stringify(v)); } catch {} },
+};
+
+// 中文谷圈常用词 → 日站上的叫法
+const GLOSSARY = [
+  ["吧唧", "缶バッジ"], ["立牌", "アクリルスタンド"], ["亚克力挂件", "アクリルキーホルダー"], ["色纸", "色紙"],
+  ["小卡", "ブロマイド"], ["透卡", "クリアカード"], ["手办", "フィギュア"], ["景品", "プライズ"],
+  ["毛绒", "ぬいぐるみ"], ["一番赏", "一番くじ"], ["挂画", "タペストリー"], ["海报", "ポスター"],
+  ["明信片", "ポストカード"], ["杯垫", "コースター"], ["徽章/别针", "ピンズ"], ["痛包", "痛バッグ"],
+  ["抱枕套", "抱き枕カバー"], ["周边", "グッズ"], ["未拆", "未開封"], ["随机", "ランダム"],
+  ["整套", "セット"], ["签名", "サイン"], ["特典", "特典"],
+];
+
+let S = null;              // /api/state
+let clockSkew = 0;         // 服务器时间 - 本机时间
+let feedMax = 0, feedMin = 0, feedFilter = { watch: "", source: "" };
+let unseen = 0;
+let tab = "feed";
+
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const r = await fetch(path, opt);
+  const d = await r.json().catch(() => ({ error: "服务器没有回应（程序关了？）" }));
+  if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+  return d;
+}
+
+function toast(msg, bad) {
+  const t = $("#toast");
+  t.textContent = msg; t.className = "show" + (bad ? " bad" : "");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.className = "", bad ? 5000 : 2500);
+}
+
+const srcName = k => (S?.sources.find(s => s.key === k) || {}).name || k;
+const yen = p => p == null ? "价格未知" : "¥" + Number(p).toLocaleString("ja-JP");
+const cny = p => p == null || !S ? "" : "≈" + Math.round(p * S.rate).toLocaleString("zh-CN") + "元";
+const now = () => Date.now() / 1000 + clockSkew;
+function ago(ts) {
+  if (!ts) return "";
+  const d = Math.max(0, now() - ts);
+  if (d < 60) return "刚刚";
+  if (d < 3600) return Math.floor(d / 60) + " 分钟前";
+  if (d < 86400) return Math.floor(d / 3600) + " 小时前";
+  return Math.floor(d / 86400) + " 天前";
+}
+const words = a => (a || []).join(", ");
+
+// —— 状态 ——
+async function loadState() {
+  S = await api("/api/state");
+  clockSkew = S.monitor.now - Date.now() / 1000;
+  renderStatus(); renderWatches(); renderChannels(); renderSettings(); renderFeedFilters();
+}
+
+function renderStatus() {
+  if (!S) return;
+  const m = S.monitor, el = $("#status");
+  const active = S.config.watches.filter(w => w.enabled).length;
+  if (!active) { el.innerHTML = '<span class="dot warn"></span>还没有启用的关注'; return; }
+  if (m.busy) { el.innerHTML = '<span class="dot ok pulse"></span>扫描中…'; return; }
+  const left = Math.max(0, Math.round(m.next_cycle_at - now()));
+  const mm = Math.floor(left / 60), ss = String(left % 60).padStart(2, "0");
+  el.innerHTML = `<span class="dot ok"></span>监控中 · ${active} 个关注<span class="long">${m.next_cycle_at ? ` · 下次 ${mm}:${ss}` : ""}</span>`;
+}
+
+// —— 上新 ——
+function cardHTML(it, opts = {}) {
+  const img = it.image ? `<img loading="lazy" src="${esc(it.image)}" alt="" onerror="this.remove()">` : "";
+  const drop = it.kind === "drop" ? `<span class="badge drop">降价</span>` : "";
+  const old = it.kind === "drop" && it.old_price != null ? `<s>${yen(it.old_price)}</s>` : "";
+  const meta = opts.preview ? (it.extra || "") : [it.watch_name, it.extra, ago(it.found_at)].filter(Boolean).join(" · ");
+  return `<a class="card${opts.fresh ? " fresh" : ""}${opts.out ? " out" : ""}" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">
+    <div class="thumb"><div class="noimg">无图</div>${img}
+      <span class="badge" style="background:var(--s-${esc(it.source)})">${esc(srcName(it.source))}</span>${drop}</div>
+    <div class="body">
+      <div class="title" title="${esc(it.title)}">${esc(it.title)}</div>
+      <div class="price">${old}${yen(it.price)}<small>${cny(it.price)}</small></div>
+      ${meta ? `<div class="meta">${esc(meta)}</div>` : ""}
+    </div></a>`;
+}
+
+function renderFeedFilters() {
+  const chips = [["", "全部"], ...S.config.watches.map(w => [w.id, w.name])];
+  $("#feedChips").innerHTML = chips.map(([id, name]) =>
+    `<button class="chip${feedFilter.watch === id ? " on" : ""}" data-watch="${esc(id)}">${esc(name)}</button>`).join("");
+  const sel = $("#feedSource");
+  sel.innerHTML = `<option value="">所有网站</option>` + S.sources.map(s => `<option value="${s.key}">${esc(s.name)}</option>`).join("");
+  sel.value = feedFilter.source;
+}
+
+async function loadFeed(reset) {
+  const q = new URLSearchParams({ limit: 60, watch: feedFilter.watch, source: feedFilter.source });
+  if (!reset && feedMin) q.set("before", feedMin);
+  const { items } = await api("/api/feed?" + q);
+  const box = $("#feed");
+  if (reset) { box.innerHTML = ""; feedMax = 0; feedMin = 0; }
+  box.insertAdjacentHTML("beforeend", items.map(it => cardHTML(it)).join(""));
+  if (items.length) {
+    feedMax = Math.max(feedMax, items[0].id);
+    feedMin = items[items.length - 1].id;
+  }
+  $("#moreBtn").hidden = items.length < 60;
+  renderFeedEmpty();
+}
+
+function renderFeedEmpty() {
+  const empty = !$("#feed").children.length, el = $("#feedEmpty");
+  el.hidden = !empty;
+  if (!empty || !S) return;
+  el.innerHTML = S.config.watches.length
+    ? (feedFilter.watch || feedFilter.source ? "这个筛选下还没有东西。"
+      : "<b>还没有上新</b><br>第一次扫描只记下现有商品，之后新上架的会出现在这里并推送给你。<br>可以去「关注」里看看每个网站的扫描状态。")
+    : '<b>还没有关注</b><br>点「关注」→「新建关注」，填一个关键词，比如 <b>五条悟 缶バッジ</b>。';
+}
+
+// 轮询新条目：只拉比 feedMax 更新的
+async function pollFeed() {
+  if (!pollFeed.primed) return;   // 首屏还没加载完
+  const q = new URLSearchParams({ after: feedMax, limit: 100, watch: feedFilter.watch, source: feedFilter.source });
+  const { items } = await api("/api/feed?" + q);
+  if (!items.length || items[0].id <= feedMax) return;
+  feedMax = items[0].id;
+  if (!feedMin) feedMin = items[items.length - 1].id;
+  $("#feed").insertAdjacentHTML("afterbegin", items.map(it => cardHTML(it, { fresh: true })).join(""));
+  renderFeedEmpty();
+  announce(items);
+}
+
+function announce(items) {
+  if (tab !== "feed" || document.hidden) {
+    unseen += items.length;
+    $("#newCount").textContent = unseen; $("#newCount").hidden = false;
+    document.title = `(${unseen}) goodsmare`;
+  }
+  if (store.get("beep", true)) beep();
+  if (store.get("notify", false) && "Notification" in window && Notification.permission === "granted") {
+    items.slice(0, 4).forEach(it => {
+      const n = new Notification(`${srcName(it.source)}｜${it.watch_name}`, {
+        body: `${it.title}\n${yen(it.price)} ${cny(it.price)}`, icon: it.image || undefined, tag: it.source + it.item_id,
+      });
+      n.onclick = () => { window.open(it.url, "_blank", "noopener"); n.close(); };
+    });
+  }
+}
+
+function beep() {
+  try {
+    const ctx = beep.ctx || (beep.ctx = new (window.AudioContext || window.webkitAudioContext)());
+    [880, 1320].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + i * 0.13;
+      o.frequency.value = f; o.type = "sine";
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.2, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.13);
+    });
+  } catch {}
+}
+
+// —— 关注 ——
+function renderWatches() {
+  const ws = S.config.watches;
+  $("#watchCount").textContent = ws.length;
+  if (!ws.length) {
+    $("#watchList").innerHTML = `<div class="empty"><b>还没有关注</b><br>点上面的「新建关注」。关键词用日文搜得最准，表单里有常用谷子词可以点。</div>`;
+    return;
+  }
+  $("#watchList").innerHTML = ws.map(w => {
+    const st = S.status[w.id] || {};
+    const range = w.price_min && w.price_max ? `${yen(w.price_min)} ~ ${yen(w.price_max)}`
+      : w.price_max ? `${yen(w.price_max)} 以下` : w.price_min ? `${yen(w.price_min)} 以上` : "价格不限";
+    const meta = [range, w.must.length ? "必含：" + words(w.must) : "", w.exclude.length ? "排除：" + words(w.exclude) : "", w.price_drop ? "降价提醒" : ""].filter(Boolean).join(" · ");
+    const srcs = w.sources.map(k => {
+      const s = st[k];
+      const cls = !s ? "" : !s.ok ? (s.count === 0 && /解析到 0 件/.test(s.message) ? "warn" : "err") : "ok";
+      const msg = s ? `${s.message} · ${ago(s.checked_at)}` : "等待第一次扫描";
+      return `<div class="src" title="${esc(msg)}"><span class="dot ${cls}"></span><b>${esc(srcName(k))}</b><span class="msg">${esc(msg)}</span></div>`;
+    }).join("");
+    return `<div class="panel watch${w.enabled ? "" : " off"}" data-id="${esc(w.id)}">
+      <div class="watch-head"><b>${esc(w.name)}</b>${w.name !== w.keyword ? `<span class="kw">「${esc(w.keyword)}」</span>` : ""}
+        <div class="spacer"></div>
+        <label class="switch" title="启用/暂停"><input type="checkbox" data-act="toggle" ${w.enabled ? "checked" : ""}><span></span></label></div>
+      <div class="watch-meta">${esc(meta)}</div>
+      <div class="srcs">${srcs}</div>
+      <div class="actions">
+        <button data-act="feed">看它的上新</button><button data-act="edit">编辑</button><button class="danger" data-act="del">删除</button>
+      </div></div>`;
+  }).join("");
+}
+
+function openWatch(w) {
+  const f = $("#watchForm");
+  f.reset();
+  f.dataset.id = w?.id || "";
+  $("#watchDlgTitle").textContent = w ? "编辑关注" : "新建关注";
+  f.keyword.value = w?.keyword || "";
+  f.name.value = w && w.name !== w.keyword ? w.name : "";
+  f.price_min.value = w?.price_min || "";
+  f.price_max.value = w?.price_max || "";
+  f.must.value = words(w?.must);
+  f.exclude.value = words(w?.exclude);
+  f.price_drop.checked = !!w?.price_drop;
+  f.enabled.checked = w ? w.enabled : true;
+  const chosen = w?.sources || S.sources.map(s => s.key);
+  $("#srcChecks").innerHTML = S.sources.map(s =>
+    `<label class="check"><input type="checkbox" value="${s.key}" ${chosen.includes(s.key) ? "checked" : ""}> ${esc(s.name)}</label>`).join("");
+  $("#previewBox").hidden = true;
+  updateCny();
+  $("#watchDlg").showModal();
+}
+
+function watchFromForm() {
+  const f = $("#watchForm");
+  return {
+    id: f.dataset.id || "", keyword: f.keyword.value.trim(), name: f.name.value.trim(),
+    sources: $$("#srcChecks input:checked").map(i => i.value),
+    price_min: f.price_min.value || 0, price_max: f.price_max.value || 0,
+    must: f.must.value, exclude: f.exclude.value,
+    price_drop: f.price_drop.checked, enabled: f.enabled.checked,
+  };
+}
+
+function updateCny() {
+  const f = $("#watchForm"), hints = $$(".cnyHint", f);
+  [f.price_min, f.price_max].forEach((inp, i) => hints[i].textContent = inp.value ? cny(Number(inp.value)) : "");
+}
+
+async function runPreview(source) {
+  const w = watchFromForm();
+  if (!w.keyword) { toast("先填关键词", true); return; }
+  const keys = w.sources.length ? w.sources : S.sources.map(s => s.key);
+  source = source || keys[0];
+  $("#previewBox").hidden = false;
+  $("#previewSrc").innerHTML = keys.map(k => `<button type="button" class="chip${k === source ? " on" : ""}" data-src="${k}">${esc(srcName(k))}</button>`).join("");
+  $("#preview").innerHTML = "";
+  $("#previewInfo").textContent = `正在搜 ${srcName(source)}…`;
+  try {
+    const d = await api("/api/preview", { ...w, source });
+    const kept = d.items.filter(it => it.passes).length;
+    $("#previewInfo").textContent = d.total
+      ? `${srcName(source)} 最新的 ${d.total} 件里，符合你的条件的 ${kept} 件（灰掉的是被价格/必含/排除词过滤掉的）`
+      : `${srcName(source)} 没搜到东西。换个关键词试试，日文通常更准。`;
+    $("#preview").innerHTML = d.items.map(it => cardHTML(it, { preview: true, out: !it.passes })).join("");
+  } catch (e) {
+    $("#previewInfo").textContent = `${srcName(source)} 搜索失败：${e.message}`;
+  }
+}
+
+// —— 推送 ——
+function renderChannels() {
+  const chs = S.config.channels, types = S.channel_types;
+  $("#channelList").innerHTML = chs.length ? chs.map(c => `
+    <div class="panel" data-id="${esc(c.id)}" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="dot ${c.enabled ? "ok" : ""}"></span><b>${esc(c.name || types[c.type]?.label || c.type)}</b>
+      <span class="hint">${esc([c.name ? types[c.type]?.label : "", c.enabled ? "" : "已停用"].filter(Boolean).join(" · "))}</span>
+      <div class="spacer"></div>
+      <button data-act="test">测试</button><button data-act="edit">编辑</button><button class="danger" data-act="del">删除</button>
+    </div>`).join("")
+    : `<div class="empty"><b>还没配推送</b><br>不配也能用：开着这个网页会弹浏览器通知。<br>想推到微信：加一个 <b>Server酱</b>、<b>PushPlus</b> 或 <b>企业微信群机器人</b>；iPhone 可以用 <b>Bark</b>。</div>`;
+  const n = $("#browserNotify"), hint = $("#notifyHint");
+  n.checked = store.get("notify", false);
+  $("#beep").checked = store.get("beep", true);
+  if (!("Notification" in window)) { n.disabled = true; hint.textContent = "这个浏览器不支持系统通知"; }
+  else if (Notification.permission === "denied") hint.textContent = "浏览器拒绝了通知权限，要在地址栏左边的网站设置里打开";
+  else hint.textContent = "";
+}
+
+function openChannel(c) {
+  const f = $("#chForm");
+  f.reset(); f.dataset.id = c?.id || "";
+  const types = S.channel_types;
+  $("#chType").innerHTML = Object.entries(types).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("");
+  $("#chType").value = c?.type || "serverchan";
+  $("#chType").disabled = !!c;
+  f.name.value = c?.name || "";
+  f.enabled.checked = c ? c.enabled : true;
+  renderChFields(c || {});
+  $("#chDlg").showModal();
+}
+
+function renderChFields(values) {
+  const t = S.channel_types[$("#chType").value];
+  $("#chFields").innerHTML = t.fields.map(fd => `
+    <label class="field"><span>${esc(fd.label)}${fd.required ? "" : "（可选）"}</span>
+      <input type="${/password|secret|token|key/.test(fd.key) ? "password" : "text"}" data-key="${fd.key}" value="${esc(values[fd.key] || "")}" ${fd.required ? "required" : ""} autocomplete="off">
+      <small>${esc(fd.hint)}</small></label>`).join("");
+}
+
+function channelFromForm() {
+  const f = $("#chForm");
+  const c = { id: f.dataset.id || "", type: $("#chType").value, name: f.name.value.trim(), enabled: f.enabled.checked };
+  $$("#chFields input").forEach(i => c[i.dataset.key] = i.value.trim());
+  return c;
+}
+
+// —— 设置 ——
+function renderSettings() {
+  const c = S.config;
+  if (!renderSettings.done) {   // 只在第一次填，免得轮询把正在改的值冲掉
+    $("#setInterval").value = c.interval; $("#setGap").value = c.request_gap;
+    $("#setProxy").value = c.proxy; $("#setRate").value = c.jpy_to_cny; $("#setAutoRate").checked = c.auto_rate;
+    renderSettings.done = true;
+  }
+  $("#rateHint").textContent = c.auto_rate ? `当前自动汇率：1 日元 ≈ ${S.rate.toFixed(4)} 元（拿不到时用左边这个）` : "";
+  const logs = $("#logs"), atBottom = logs.scrollTop + logs.clientHeight >= logs.scrollHeight - 8;
+  logs.textContent = S.logs.length ? S.logs.join("\n") : "还没有日志。";
+  if (atBottom) logs.scrollTop = logs.scrollHeight;
+  $("#version").textContent = `${S.app} v${S.version}`;
+}
+
+// —— 事件 ——
+$("#tabs").addEventListener("click", e => {
+  const b = e.target.closest("button[data-tab]"); if (!b) return;
+  tab = b.dataset.tab;
+  $$("#tabs button").forEach(x => x.classList.toggle("on", x === b));
+  $$("main > section").forEach(s => s.hidden = s.id !== "tab-" + tab);
+  if (tab === "feed") { unseen = 0; $("#newCount").hidden = true; document.title = "goodsmare"; }
+  store.set("tab", tab);
+});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && tab === "feed") { unseen = 0; $("#newCount").hidden = true; document.title = "goodsmare"; }
+});
+
+$("#scanBtn").onclick = async () => {
+  try { await api("/api/scan", {}); toast("开始扫描"); setTimeout(refresh, 800); } catch (e) { toast(e.message, true); }
+};
+
+$("#feedChips").addEventListener("click", e => {
+  const b = e.target.closest("[data-watch]"); if (!b) return;
+  feedFilter.watch = b.dataset.watch; renderFeedFilters(); loadFeed(true);
+});
+$("#feedSource").onchange = e => { feedFilter.source = e.target.value; loadFeed(true); };
+$("#moreBtn").onclick = () => loadFeed(false);
+
+$("#addWatch").onclick = () => openWatch(null);
+$("#watchList").addEventListener("click", async e => {
+  const el = e.target.closest("[data-act]"); if (!el) return;
+  const id = el.closest("[data-id]").dataset.id, w = S.config.watches.find(x => x.id === id);
+  const act = el.dataset.act;
+  try {
+    if (act === "edit") openWatch(w);
+    if (act === "feed") { feedFilter.watch = id; renderFeedFilters(); loadFeed(true); $('#tabs [data-tab="feed"]').click(); }
+    if (act === "del" && confirm(`删除「${w.name}」？`)) { await api("/api/watch/delete", { id }); toast("已删除"); refresh(); }
+  } catch (err) { toast(err.message, true); }
+});
+$("#watchList").addEventListener("change", async e => {
+  if (e.target.dataset.act !== "toggle") return;
+  const id = e.target.closest("[data-id]").dataset.id, w = S.config.watches.find(x => x.id === id);
+  try { await api("/api/watch", { ...w, enabled: e.target.checked }); refresh(); } catch (err) { toast(err.message, true); }
+});
+
+$("#gloss").innerHTML = GLOSSARY.map(([zh, ja]) => `<button type="button" data-ja="${esc(ja)}">${esc(zh)}<em>${esc(ja)}</em></button>`).join("");
+$("#gloss").addEventListener("click", e => {
+  const b = e.target.closest("[data-ja]"); if (!b) return;
+  const inp = $("#watchForm").keyword, ja = b.dataset.ja;
+  if (!inp.value.includes(ja)) inp.value = (inp.value.trim() + " " + ja).trim();
+  inp.focus();
+});
+$("#watchForm").addEventListener("input", e => { if (e.target.name === "price_min" || e.target.name === "price_max") updateCny(); });
+$("#previewBtn").onclick = () => runPreview();
+$("#previewSrc").addEventListener("click", e => { const b = e.target.closest("[data-src]"); if (b) runPreview(b.dataset.src); });
+$("#watchForm").addEventListener("submit", async e => {
+  if (e.submitter?.value !== "save") return;
+  e.preventDefault();
+  const w = watchFromForm();
+  if (!w.sources.length) { toast("至少选一个网站", true); return; }
+  try { await api("/api/watch", w); $("#watchDlg").close(); toast(w.id ? "已保存" : "已添加，马上开始第一次扫描"); refresh(); }
+  catch (err) { toast(err.message, true); }
+});
+
+$("#addChannel").onclick = () => openChannel(null);
+$("#chType").onchange = () => renderChFields({});
+$("#channelList").addEventListener("click", async e => {
+  const el = e.target.closest("[data-act]"); if (!el) return;
+  const id = el.closest("[data-id]").dataset.id, c = S.config.channels.find(x => x.id === id);
+  try {
+    if (el.dataset.act === "edit") openChannel(c);
+    if (el.dataset.act === "test") { el.disabled = true; const d = await api("/api/channel/test", { id }); toast(d.message); }
+    if (el.dataset.act === "del" && confirm("删除这个推送渠道？")) { await api("/api/channel/delete", { id }); refresh(); }
+  } catch (err) { toast("失败：" + err.message, true); }
+  finally { el.disabled = false; }
+});
+$("#chTest").onclick = async () => {
+  const b = $("#chTest"); b.disabled = true;
+  try { const d = await api("/api/channel/test", channelFromForm()); toast(d.message); }
+  catch (err) { toast("失败：" + err.message, true); }
+  finally { b.disabled = false; }
+};
+$("#chForm").addEventListener("submit", async e => {
+  if (e.submitter?.value !== "save") return;
+  e.preventDefault();
+  try { await api("/api/channel", channelFromForm()); $("#chDlg").close(); toast("已保存"); refresh(); }
+  catch (err) { toast(err.message, true); }
+});
+$("#browserNotify").onchange = async e => {
+  if (e.target.checked && Notification.permission !== "granted") {
+    const p = await Notification.requestPermission();
+    if (p !== "granted") { e.target.checked = false; toast("浏览器没给通知权限", true); }
+  }
+  store.set("notify", e.target.checked); renderChannels();
+};
+$("#beep").onchange = e => { store.set("beep", e.target.checked); if (e.target.checked) beep(); };
+
+$("#saveSettings").onclick = async () => {
+  try {
+    await api("/api/settings", {
+      interval: Number($("#setInterval").value), request_gap: Number($("#setGap").value),
+      proxy: $("#setProxy").value.trim(), jpy_to_cny: Number($("#setRate").value), auto_rate: $("#setAutoRate").checked,
+    });
+    renderSettings.done = false; toast("已保存"); refresh();
+  } catch (e) { toast(e.message, true); }
+};
+$("#clearFeed").onclick = async () => {
+  if (!confirm("清空所有上新记录？（不影响关注和已见过的商品）")) return;
+  try { await api("/api/feed/clear", {}); loadFeed(true); toast("已清空"); } catch (e) { toast(e.message, true); }
+};
+
+// —— 刷新节奏 ——
+async function refresh() {
+  try { await loadState(); await pollFeed(); }
+  catch (e) { $("#status").innerHTML = `<span class="dot err"></span>${esc(e.message)}`; }
+}
+(async () => {
+  try {
+    await loadState();
+    await loadFeed(true);
+    pollFeed.primed = true;
+  } catch (e) { $("#status").innerHTML = `<span class="dot err"></span>${esc(e.message)}`; }
+  const saved = store.get("tab", "feed");
+  if (saved !== "feed") $(`#tabs [data-tab="${saved}"]`)?.click();
+  setInterval(refresh, 6000);
+  setInterval(renderStatus, 1000);
+})();
+</script>
+</body>
+</html>
