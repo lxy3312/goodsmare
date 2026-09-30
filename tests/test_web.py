@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from goodsmare.config import ConfigStore
+from goodsmare.config import ALL_SOURCES, ConfigStore
 from goodsmare.monitor import Monitor
 from goodsmare.store import Store
 from goodsmare.web import App, serve
@@ -48,6 +48,13 @@ class WebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(len(state["sources"]), 7)
         self.assertIn("serverchan", state["channel_types"])
+
+    def test_page_has_a_color_for_every_source(self):
+        # 角标、状态色块都靠 --s-<网站> 上色；新加网站忘了配色，页面上就是一块灰
+        _, body = self.req("GET", "/")
+        html = body.decode("utf-8")
+        for key in ALL_SOURCES:
+            self.assertIn(f"--s-{key}:", html, f"index.html 里没有 {key} 的代表色，补一个 --s-{key}")
 
     def test_watch_crud(self):
         status, w = self.req("POST", "/api/watch", {"keyword": " 五条悟 缶バッジ ", "must": "五条，缶",
