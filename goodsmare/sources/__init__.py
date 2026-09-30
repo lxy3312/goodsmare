@@ -1,3 +1,4 @@
+from .animate import Animate
 from .base import Item, NoResults, Query, Source
 from .mandarake import Mandarake
 from .mercari import Mercari
@@ -7,7 +8,7 @@ from .yahoo_auction import YahooAuction
 from .yahoo_flea import YahooFlea
 
 SOURCES: dict[str, Source] = {s.key: s for s in (
-    Mercari(), YahooAuction(), YahooFlea(), Rakuma(), Surugaya(), Mandarake(),
+    Mercari(), YahooAuction(), YahooFlea(), Rakuma(), Surugaya(), Mandarake(), Animate(),
 )}
 
 __all__ = ["Item", "NoResults", "Query", "Source", "SOURCES"]

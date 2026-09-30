@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from goodsmare import net
+from goodsmare.sources.animate import Animate
 from goodsmare.sources.base import NoResults, Query, parse_yen
 from goodsmare.sources.mandarake import Mandarake
 from goodsmare.sources.mercari import Mercari
@@ -142,6 +143,34 @@ SURUGAYA = """
  <div class="item_price"><p class="mgnB5"><a href="/product/other/ZHOREI9999"><span class="text-red">￥980</span> (3点の中古品とマケプレ)</a></p></div>
 </div>
 </div>"""
+
+def animate_card(item_id, title, price_html, status, tag="", img="a.jpg"):
+    return f"""<li>
+ <div class="item_list_class">{tag}</div>
+ <div class="item_list_thumb"><a href="/pn/x/pd/{item_id}/"><img src="https://tc-animate.techorus-cdn.com/resize_image/resize_image.php?image={img}&amp;width=400&amp;height=400&square=1" width="178" height="178" title='{title}' /></a></div>
+ <h3><a href="/pn/x/pd/{item_id}/" title='{title}'>{title}</a></h3>
+ <div class="item_list_detail">{price_html}
+  <div class="item_list_status">
+   <p class="stock">販売状況：<span class="_1">{status}</span></p>
+   <p class="media">カテゴリ：<a href="/products/index.php?spc=1" >グッズ</a></p>
+   <p class="release">発売日：2027年01月中 発売</p><p class="bulk_purchase_product"></p>
+  </div></div></li>"""
+
+
+ANIMATE_REAL = ('<div class="item_list"><ul>' + "".join([
+    animate_card("3612301", "【グッズ-タペストリー】39Culture 2026 MUSIC B2ハーフタペストリー / 初音ミク",
+                 '<p class="price"><font class="notranslate">2,750</font>円(税込)</p><p class="price">&nbsp;</p>',
+                 "予約受付中"),
+    # 打折：saleprice 是现价，oldprice 是原价
+    animate_card("3609553", "【美少女フィギュア】初音ミク Rosuuri Ver. 1/7 完成品フィギュア【再販】",
+                 '<p class="saleprice"><font class="notranslate">31,350</font>円(税込)&nbsp;&nbsp;5%OFF</p>'
+                 '<p class="oldprice"><font class="notranslate">33,000</font>円(税込)</p>', "予約受付中"),
+    animate_card("3602650", "【音楽】プロジェクトセカイ WORLD LINK ALBUM",
+                 '<p class="price"><font class="notranslate">2,310</font>円(税込)</p>', "在庫あり",
+                 tag="<p><span>特典あり アニメイト特典</span></p>"),
+    animate_card("3542288", "【グッズ-ぬいぐるみ】初音ミク マジカルミライ 2026 ふわぷち ぬいぐるみ(L)",
+                 '<p class="price"><font class="notranslate">6,600</font>円(税込)</p>', "販売終了"),
+]) + "</ul></div>")
 
 MANDARAKE_REAL = """
 <div class="entry"><div class="thumlarge">
@@ -319,6 +348,39 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(items[0].title, "缶バッジ 五条悟 「呪術廻戦」")
         self.assertEqual(items[1].price, 980)
         self.assertEqual(items[1].image, "https://www.suruga-ya.jp/database/photo.php?shinaban=ZHOREI9999")
+
+    def test_animate(self):
+        items = {i.id: i for i in Animate.parse(ANIMATE_REAL)}
+        self.assertEqual(list(items), ["3612301", "3609553", "3602650", "3542288"])
+        first = items["3612301"]
+        self.assertEqual(first.price, 2750, "第二个空的 p.price 不能干扰")
+        self.assertEqual(first.title, "【グッズ-タペストリー】39Culture 2026 MUSIC B2ハーフタペストリー / 初音ミク")
+        self.assertEqual(first.url, "https://www.animate-onlineshop.jp/pd/3612301/")
+        self.assertEqual(first.extra, "予約受付中")
+        self.assertTrue(first.image.startswith("https://tc-animate.techorus-cdn.com/resize_image/"))
+        self.assertIn("&width=400&height=400", first.image)
+        self.assertEqual(items["3609553"].price, 31350, "打折取现价，不是原价 33,000")
+        self.assertEqual(items["3602650"].extra, "在庫あり 特典あり")
+        self.assertFalse(items["3602650"].sold)
+        self.assertTrue(items["3542288"].sold)
+
+    def test_animate_request_and_empty(self):
+        empty = net.Response(200, "u", {}, "<p>zzz に関する商品は0件あります。</p>".encode())
+        with mock.patch.object(net, "get", return_value=empty) as get:
+            self.assertIsInstance(Animate().search(Query("zzz")), NoResults)
+        params = get.call_args.kwargs["params"]
+        # 按登録新しい排、每页 100、nf=1 才让 nd[]=7（不显示販売終了）生效
+        self.assertEqual((params["ss"], params["sl"], params["nf"], params["nd[]"]), (5, 100, 1, 7))
+        self.assertEqual(params["smt"], "zzz")
+
+    def test_animate_fallback(self):
+        html = ('<div><section><a href="/pn/x/pd/1234567/"><img src="https://x/1.jpg"><h2>新デザインの商品</h2></a>'
+                '<div>3,300円(税込)</div></section>'
+                '<section><a href="/pn/y/pd/7654321/">別の商品</a><div>500円(税込)</div></section></div>')
+        items = Animate.parse(html)
+        self.assertEqual([i.id for i in items], ["1234567", "7654321"])
+        self.assertEqual(items[0].price, 3300)
+        self.assertEqual(items[1].url, "https://www.animate-onlineshop.jp/pd/7654321/")
 
     def test_mandarake_real_page(self):
         items = Mandarake.parse(MANDARAKE_REAL)

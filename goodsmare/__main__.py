@@ -31,6 +31,7 @@ ALIASES = {
     "乐天": "rakuma", "rakuma": "rakuma", "ラクマ": "rakuma", "fril": "rakuma",
     "骏河屋": "surugaya", "駿河屋": "surugaya", "surugaya": "surugaya", "suruga": "surugaya",
     "mandarake": "mandarake", "まんだらけ": "mandarake", "蔓德拉": "mandarake", "曼达拉": "mandarake",
+    "animate": "animate", "アニメイト": "animate",
     "yahoo_auction": "yahoo_auction",
 }
 
@@ -214,7 +215,7 @@ def main(argv=None):
     sub.add_parser("once", help="扫一轮就退出")
 
     s = sub.add_parser("search", help="试搜一个网站")
-    s.add_argument("source", help="网站：煤炉 雅虎 雅虎闲置 乐天 骏河屋 mandarake")
+    s.add_argument("source", help="网站：煤炉 雅虎 雅虎闲置 乐天 骏河屋 mandarake animate")
     s.add_argument("keyword", nargs="+")
     a = sub.add_parser("add", help="加一个关注")
     a.add_argument("keyword", nargs="+")

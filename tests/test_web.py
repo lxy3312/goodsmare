@@ -46,7 +46,7 @@ class WebTests(unittest.TestCase):
         self.assertIn("goodsmare".encode(), body)
         status, state = self.req("GET", "/api/state")
         self.assertEqual(status, 200)
-        self.assertEqual(len(state["sources"]), 6)
+        self.assertEqual(len(state["sources"]), 7)
         self.assertIn("serverchan", state["channel_types"])
 
     def test_watch_crud(self):

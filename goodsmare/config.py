@@ -9,7 +9,7 @@ import threading
 import uuid
 from pathlib import Path
 
-ALL_SOURCES = ["mercari", "yahoo_auction", "yahoo_flea", "rakuma", "surugaya", "mandarake"]
+ALL_SOURCES = ["mercari", "yahoo_auction", "yahoo_flea", "rakuma", "surugaya", "mandarake", "animate"]
 
 DEFAULTS = {
     "interval": 180,        # 两轮扫描之间隔多少秒
