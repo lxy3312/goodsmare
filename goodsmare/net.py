@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import http.cookiejar
 import json
 import re
 import threading
@@ -20,6 +21,7 @@ UA = (
 
 _lock = threading.Lock()
 _proxy = ""
+_proxy_handlers: list = []   # 空着就用 build_opener 默认的：读系统代理设置
 _opener = urllib.request.build_opener()
 
 # 调试用：设了目录就把每次响应原样存下来，页面改版时拿去对照。
@@ -84,7 +86,7 @@ def _looks_blocked(head: str) -> bool:
 
 def set_proxy(proxy: str) -> None:
     """proxy 为空时沿用系统环境变量（HTTPS_PROXY 等）。"""
-    global _proxy, _opener
+    global _proxy, _proxy_handlers, _opener
     proxy = (proxy or "").strip()
     with _lock:
         if proxy == _proxy:
@@ -93,15 +95,24 @@ def set_proxy(proxy: str) -> None:
         if proxy:
             if "://" not in proxy:
                 proxy = "http://" + proxy
-            handler = urllib.request.ProxyHandler({"http": proxy, "https": proxy})
-            _opener = urllib.request.build_opener(handler)
+            _proxy_handlers = [urllib.request.ProxyHandler({"http": proxy, "https": proxy})]
         else:
-            _opener = urllib.request.build_opener()
+            _proxy_handlers = []
+        _opener = urllib.request.build_opener(*_proxy_handlers)
+
+
+def _opener_for(cookies: http.cookiejar.CookieJar | None):
+    if cookies is None:
+        return _opener
+    with _lock:
+        handlers = list(_proxy_handlers)
+    return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies), *handlers)
 
 
 def request(method: str, url: str, *, params: dict | None = None, headers: dict | None = None,
             json_body=None, data: bytes | dict | None = None, timeout: float = 20,
-            retries: int = 1) -> Response:
+            retries: int = 1, cookies: http.cookiejar.CookieJar | None = None) -> Response:
+    """cookies：要记住 cookie 的网站自己带一个 CookieJar 来，别的网站照旧不存。"""
     if params:
         clean = {k: v for k, v in params.items() if v is not None and v != ""}
         url += ("&" if "?" in url else "?") + urllib.parse.urlencode(clean)
@@ -124,10 +135,11 @@ def request(method: str, url: str, *, params: dict | None = None, headers: dict 
         body = data
 
     last_err: Exception | None = None
+    opener = _opener_for(cookies)
     for attempt in range(retries + 1):
         req = urllib.request.Request(url, data=body, headers=hdrs, method=method)
         try:
-            with _opener.open(req, timeout=timeout) as resp:
+            with opener.open(req, timeout=timeout) as resp:
                 raw = resp.read()
                 result = Response(resp.status, resp.geturl(), resp.headers, _decompress(raw, resp.headers))
         except urllib.error.HTTPError as e:

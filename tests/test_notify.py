@@ -59,9 +59,20 @@ class NotifyTests(unittest.TestCase):
         self.assertIn('href="https://www.suruga-ya.jp/product/detail/4"', body["content"])
         self.assertIn("打开商品页", body["content"])
 
-    def test_cover_turns_mercari_webp_into_jpg(self):
-        def c(url):
-            return notify.cover(Item(source="mercari", id="m1", title="t", price=1, url="u", image=url))
+    def test_cover_turns_webp_into_jpg(self):
+        def c(url, source="mercari", id="m1"):
+            return notify.cover(Item(source=source, id=id, title="t", price=1, url="u", image=url))
+        # 2026 年 9 月煤炉接口实际给的地址
+        self.assertEqual(c("https://static.mercdn.net/thumb/item/webp/m71259340700_1.jpg?1784458467"),
+                         "https://static.mercdn.net/thumb/item/jpeg/m71259340700_1.jpg?1784458467")
+        self.assertEqual(c("https://static.mercdn.net/item/detail/webp/photos/m7_1.jpg?17"),
+                         "https://static.mercdn.net/item/detail/orig/photos/m7_1.jpg?17")
+        self.assertEqual(c("https://assets.mercari-shops-static.com/-/small/plain/2JXNZChmoeUyj9sWuoQZQ4.webp@webp"),
+                         "https://assets.mercari-shops-static.com/-/small/plain/2JXNZChmoeUyj9sWuoQZQ4.webp@jpg")
+        self.assertEqual(c("https://www.suruga-ya.jp/database/photo.php?shinaban=646176708&size=m", "surugaya", "646176708"),
+                         "https://www.suruga-ya.jp/database/pics_light/game/646176708.jpg")
+        self.assertEqual(c("https://img.mandarake.co.jp/shopimg/s_1.jpg", "mandarake", "1"),
+                         "https://img.mandarake.co.jp/shopimg/s_1.jpg")
         self.assertEqual(c("https://static.mercdn.net/c!/w=240,f=webp/thumb/photos/m1_1.jpg?17"),
                          "https://static.mercdn.net/c!/w=240/thumb/photos/m1_1.jpg?17")
         self.assertEqual(c("https://static.mercdn.net/c!/f=webp/thumb/photos/m1_1.jpg"),

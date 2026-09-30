@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import collections
 import random
+import re
 import threading
 import time
 import unicodedata
@@ -31,6 +32,16 @@ def norm(s: str) -> str:
     return unicodedata.normalize("NFKC", s or "").casefold()
 
 
+def alternatives(word: str) -> list[str]:
+    """"fishmans|フィッシュマンズ" 这样用竖线隔开的，任一个出现就算。"""
+    return [a.strip() for a in re.split(r"[|｜]", word) if a.strip()]
+
+
+def _has(title: str, word: str) -> bool:
+    alts = alternatives(norm(word))
+    return not alts or any(a in title for a in alts)
+
+
 def passes(watch: dict, item: Item) -> bool:
     if item.price is not None:
         if watch["price_min"] and item.price < watch["price_min"]:
@@ -38,22 +49,25 @@ def passes(watch: dict, item: Item) -> bool:
         if watch["price_max"] and item.price > watch["price_max"]:
             return False
     title = norm(item.title)
-    if any(norm(w) not in title for w in watch["must"]):
+    if not all(_has(title, w) for w in watch["must"]):
         return False
-    if any(norm(w) in title for w in watch["exclude"]):
+    if any(alternatives(w) and _has(title, w) for w in watch["exclude"]):
         return False
     return True
 
 
 def query_of(watch: dict) -> Query:
-    return Query(keyword=watch["keyword"], price_min=watch["price_min"],
-                 price_max=watch["price_max"], exclude=list(watch["exclude"]))
+    return Query(keyword=watch["keyword"], price_min=watch["price_min"], price_max=watch["price_max"],
+                 exclude=[a for w in watch["exclude"] for a in alternatives(w)])
 
 
-def query_sig(watch: dict) -> str:
+def query_sig(watch: dict, source: str = "") -> str:
     """决定"搜索结果集合"的那些条件。它们变了，就得重新记基线。"""
-    return "|".join([norm(watch["keyword"]), str(watch["price_min"]), str(watch["price_max"]),
-                     ",".join(sorted(norm(w) for w in watch["exclude"]))])
+    sig = "|".join([norm(watch["keyword"]), str(watch["price_min"]), str(watch["price_max"]),
+                    ",".join(sorted(norm(w) for w in watch["exclude"]))])
+    rev = getattr(SOURCES.get(source), "rev", 1)
+    # rev 为 1 时不写进去，老用户已经记好的基线不受影响
+    return sig if rev <= 1 else f"{sig}|rev{rev}"
 
 
 class Monitor:
@@ -223,7 +237,7 @@ class Monitor:
         return hits
 
     def process(self, w: dict, key: str, items: list[Item]) -> list[Hit]:
-        sig = query_sig(w)
+        sig = query_sig(w, key)
         first = self.store.baseline_sig(w["id"], key) != sig
         known = self.store.seen_prices(w["id"], key, [it.id for it in items])
         hits: list[Hit] = []

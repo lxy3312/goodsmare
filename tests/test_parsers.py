@@ -1,9 +1,15 @@
-"""解析测试。样例页面按各站真实结构（及开源解析器里用的选择器）手写，不是抓来的原页面。"""
+"""解析测试。
+
+骏河屋、Mandarake 的样例从 2026 年 9 月抓到的真实页面裁剪而来（只删了无关的标签和空白）；
+其他站按各站真实结构及开源解析器里用的选择器手写。
+"""
 
 import json
 import unittest
+from unittest import mock
 
-from goodsmare.sources.base import NoResults, parse_yen
+from goodsmare import net
+from goodsmare.sources.base import NoResults, Query, parse_yen
 from goodsmare.sources.mandarake import Mandarake
 from goodsmare.sources.mercari import Mercari
 from goodsmare.sources.rakuma import Rakuma
@@ -31,6 +37,7 @@ YAHOO = """
   <div class="Product__detail">
     <h3><a class="Product__titleLink" href="https://auctions.yahoo.co.jp/jp/auction/b1111111111">夏油傑 アクスタ</a></h3>
     <div class="Product__priceInfo"><span class="Product__priceValue">800円</span></div>
+    <dl><dt>入札</dt><dd class="Product__bid">0</dd></dl>
   </div>
 </li>
 </ul>"""
@@ -69,6 +76,54 @@ RAKUMA = """
 </div>
 </div>"""
 
+SHIPPING = """<div class="panel_buy mgnT5" style="display: none"><p class="text-center mgnB0">
+  条件により送料とは別に通信販売手数料がかかります <br> ■本州・四国・九州<br> お買上金額 5,000円未満…240円<br>
+  お買上金額 5,000円以上…無料<br> ■北海道・沖縄<br> お買上金額 5,000円未満…570円<br></p></div>"""
+
+MAKEPLA = """<div class="mgnT20 highlight-box"><div class="makeplaTit">
+  <p><strong class="border-text">以下からもご購入頂けます</strong></p>
+  <p class="mgnB5 mgnT5"><span class="icon_mp_brown mgnR5">マケプレ</span>
+    <span class="text-red fontS15"><strong>￥{price}</strong></span></p>
+  <p class="mgnL-3"><a href="/product/other/{code}" class="text-blue-light">(4点の中古品)</a></p></div></div>"""
+
+
+def suruga_card(code, price_html, link="detail"):
+    return f"""<div class="item">
+ <div class="photo_box"><p class="thum"><a href="/product/{link}/{code}?tenpo_cd=">
+   <img src="https://www.suruga-ya.jp/database/photo.php?shinaban={code}&size=m" loading="lazy"></a></p></div>
+ <div class="item_detail"><div class="title"><a href="/product/{link}/{code}?tenpo_cd=">
+   <h3 class="product-name">商品 {code}</h3></a></div>
+   <p class="release_date">[発売日：2026/09/30]</p></div>
+ <div class="item_price padT12">{price_html}</div>
+</div>"""
+
+
+SURUGAYA_REAL = "<div>" + "".join([
+    # 自营有货：新品、中古都有，外加定价
+    suruga_card("889228251", """
+      <p class="price_teika"> 新品：<span class="text-red"><strong>￥450 </strong></span>&nbsp;<span class="tax">税込</span></p>
+      <p class="price_teika"> 中古：<span class="text-red"><strong>￥439 </strong></span>&nbsp;<span class="tax">税込</span></p>
+      <p class="mgnT5 mgnB5" style="color: brown">999円以上は送料無料（<a href="javascript:void(0)">※</a>）</p>"""
+                + SHIPPING + '<p class="price_teika">定価：￥605</p>'),
+    # 限时特价：原价那行和"999円以上は送料無料"都不是售价
+    suruga_card("646062370", """
+      <p class="timesales"><span class="timesaleTit">タイムセール</span><br>
+        <span class="timesaleSpan">2026-09-27 14:00:00 から<br>2026-09-27 23:59:59 まで</span></p>
+      <p class="price_normal"> 中古通常価格&nbsp;<span class="strike"> ¥1,980 </span></p>
+      <p class="price_teika"><span class="text-red"><strong>￥1,400</strong></span>&nbsp;<span class="tax">税込</span></p>
+      <p class="mgnT5 mgnB5" style="color: brown">999円以上は送料無料（<a href="javascript:void(0)">※</a>）</p>"""
+                + SHIPPING + MAKEPLA.format(price="1,490", code="646062370")),
+    # 自营卖完了，第三方还有
+    suruga_card("646146059", '<p class="price">品切れ</p>' + SHIPPING + '<p class="price_teika">定価：￥2,750</p>'
+                + MAKEPLA.format(price="1,790", code="646146059"), link="other"),
+    # 彻底卖完：只剩定价
+    suruga_card("646247260", '<p class="price">品切れ</p>' + SHIPPING + '<p class="price_teika">定価：￥2,200</p>'),
+    # 彻底卖完，连定价都没有：运费说明里的 5,000 不能当价格
+    suruga_card("646235859", '<p class="price">品切れ</p>' + SHIPPING),
+    # 页面底部的相关搜索也叫 div.item
+    '<div class="item"><a class="btn-tag" href="/search?search_word=x">初音ミク ぬいぐるみ</a></div>',
+]) + "</div>"
+
 SURUGAYA = """
 <div id="search_result">
 <div class="item">
@@ -87,6 +142,28 @@ SURUGAYA = """
  <div class="item_price"><p class="mgnB5"><a href="/product/other/ZHOREI9999"><span class="text-red">￥980</span> (3点の中古品とマケプレ)</a></p></div>
 </div>
 </div>"""
+
+MANDARAKE_REAL = """
+<div class="entry"><div class="thumlarge">
+<div class="block" data-adult="0" data-itemidx="1348887786">
+  <span class="new_arrival new_arrival--ja">新着商品</span>
+  <div class="basic"><p class="shop">大宮店</p><p class="itemno">nitem-00MB3CH6 (0223829635)</p>
+    <p class="stock">在庫確認します</p></div>
+  <div class="pic"><div class="thum">
+    <a href="/order/detailPage/item?itemCode=1348887786&amp;ref=list&amp;soldOut=1&amp;keyword=%E5%88%9D">
+      <img src="https://img.mandarake.co.jp/shopimg/00/02/348/104/s_0002348104_1.jpg"></a></div></div>
+  <div class="title"><p><a href="/order/detailPage/item?itemCode=1348887786&amp;ref=list&amp;soldOut=1&amp;keyword=%E5%88%9D">
+    タイトー 初音ミク×Rody AMP+フィギュア～メルヘンver.～
+  </a></p></div>
+  <div class="addfavo"><a href="javascript:addMypageList('1348887786', 0);">あとで見る</a></div>
+  <div class="addcart"><a class="addbasket" data-index="1348887786" href="javascript:void(0)">カート</a></div>
+  <div class="price"><p>
+    2,000円
+    (税込 2,200円)
+  </p></div>
+  <div class="price_range"></div>
+</div>
+</div></div>"""
 
 MANDARAKE = """
 <div class="entry"><div class="thumlarge">
@@ -124,6 +201,7 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(first.image.endswith("abc.jpg"))
         self.assertEqual(items[1].price, 800)
         self.assertEqual(items[1].url, "https://auctions.yahoo.co.jp/jp/auction/b1111111111")
+        self.assertEqual(items[1].extra, "", "没人出价就不写")
 
     def test_yahoo_auction_empty(self):
         items = YahooAuction.parse("<p>条件に一致する商品は見つかりませんでした。</p>")
@@ -213,6 +291,27 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(items[2].sold)
 
     def test_surugaya(self):
+        items = {i.id: i for i in Surugaya.parse(SURUGAYA_REAL)}
+        self.assertEqual(list(items), ["889228251", "646062370", "646146059", "646247260", "646235859"])
+        got = {k: (i.price, i.extra, i.sold) for k, i in items.items()}
+        self.assertEqual(got["889228251"], (439, "中古", False))
+        self.assertEqual(got["646062370"], (1400, "タイムセール", False))
+        self.assertEqual(got["646146059"], (1790, "マケプレ", False))
+        self.assertEqual(got["646247260"], (2200, "品切れ", True))
+        self.assertEqual(got["646235859"], (None, "品切れ", True))
+        first = items["889228251"]
+        self.assertEqual(first.title, "商品 889228251")
+        self.assertEqual(first.url, "https://www.suruga-ya.jp/product/detail/889228251")
+        self.assertEqual(items["646146059"].url, "https://www.suruga-ya.jp/product/detail/646146059")
+
+    def test_surugaya_hides_sold_out(self):
+        # inStock 是反的：Off 才是只看有货
+        empty = net.Response(200, "u", {}, "<p>検索結果はありません</p>".encode())
+        with mock.patch.object(net, "get", return_value=empty) as get:
+            self.assertIsInstance(Surugaya().search(Query("x")), NoResults)
+        self.assertEqual(get.call_args.kwargs["params"]["inStock"], "Off")
+
+    def test_surugaya_old_layout(self):
         items = Surugaya.parse(SURUGAYA)
         self.assertEqual([i.id for i in items], ["602123456", "ZHOREI9999"])
         self.assertEqual(items[0].price, 1580)
@@ -220,6 +319,34 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(items[0].title, "缶バッジ 五条悟 「呪術廻戦」")
         self.assertEqual(items[1].price, 980)
         self.assertEqual(items[1].image, "https://www.suruga-ya.jp/database/photo.php?shinaban=ZHOREI9999")
+
+    def test_mandarake_real_page(self):
+        items = Mandarake.parse(MANDARAKE_REAL)
+        self.assertEqual(len(items), 1)
+        it = items[0]
+        self.assertEqual(it.id, "1348887786")
+        self.assertEqual(it.price, 2200, "取含税价")
+        self.assertEqual(it.title, "タイトー 初音ミク×Rody AMP+フィギュア～メルヘンver.～")
+        self.assertEqual(it.extra, "大宮店")
+        self.assertEqual(it.url, "https://order.mandarake.co.jp/order/detailPage/item?itemCode=1348887786")
+        self.assertEqual(it.image, "https://img.mandarake.co.jp/shopimg/00/02/348/104/s_0002348104_1.jpg")
+        self.assertFalse(it.sold)
+
+    def test_mandarake_gets_cookie_then_retries(self):
+        home = net.Response(200, "https://www.mandarake.co.jp/", {}, b"<title>MANDARAKE</title>")
+        page = net.Response(200, "https://order.mandarake.co.jp/order/listPage/list?keyword=x",
+                            {"Content-Type": "text/html; charset=utf-8"}, MANDARAKE_REAL.encode())
+        src = Mandarake()
+        with mock.patch.object(net, "get", side_effect=[home, page]) as get:
+            items = src.search(Query("初音ミク"))
+        self.assertEqual([i.id for i in items], ["1348887786"])
+        self.assertEqual(get.call_count, 2)
+        for call in get.call_args_list:
+            self.assertIs(call.kwargs["cookies"], src.cookies)
+        # 一直被弹回首页：报清楚的错，而不是"解析到 0 件"
+        with mock.patch.object(net, "get", return_value=home):
+            with self.assertRaises(net.FetchError):
+                src.search(Query("初音ミク"))
 
     def test_mandarake(self):
         items = Mandarake.parse(MANDARAKE)

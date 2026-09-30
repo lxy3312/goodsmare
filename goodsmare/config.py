@@ -29,7 +29,7 @@ WATCH_DEFAULTS = {
     "sources": list(ALL_SOURCES),
     "price_min": 0,
     "price_max": 0,
-    "must": [],             # 标题里必须全部出现的词（煤炉搜索很模糊，靠这个过滤）
+    "must": [],             # 标题里必须全部出现的词（煤炉搜索很模糊，靠这个过滤）；"A|B" 表示任一个
     "exclude": [],          # 标题里出现任何一个就不要
     "price_drop": False,    # 已经见过的商品降价了也提醒
     "enabled": True,

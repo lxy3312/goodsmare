@@ -161,6 +161,39 @@ class MonitorTests(unittest.TestCase):
         w = {"price_min": 0, "price_max": 0, "must": ["ABC", "バッジ"], "exclude": []}
         self.assertTrue(passes(w, item(1, title="ａｂｃ ｶﾝﾊﾞｯｼﾞ")))
 
+    def test_must_with_alternatives(self):
+        # 真实用过的关注：标题里有写 fishmans 的，也有写 フィッシュマンズ 的
+        w = {"price_min": 0, "price_max": 0, "must": ["フィッシュマンズ|fishmans"], "exclude": []}
+        self.assertTrue(passes(w, item(1, title="Fishmans ナイトクルージング")))
+        self.assertTrue(passes(w, item(2, title="フィッシュマンズ 空中キャンプ")))
+        self.assertFalse(passes(w, item(3, title="宇多田ヒカル ステッカー タワーレコード")))
+        # 逗号还是"都要有"，竖线的全角写法也认
+        w["must"] = ["五条｜五條", "缶バッジ"]
+        self.assertTrue(passes(w, item(4, title="五條悟 缶バッジ")))
+        self.assertFalse(passes(w, item(5, title="五条悟 アクスタ")))
+        w["must"] = ["|"]
+        self.assertTrue(passes(w, item(6)), "空的备选不能把所有东西都挡掉")
+
+    def test_exclude_with_alternatives(self):
+        w = {"price_min": 0, "price_max": 0, "must": [], "exclude": ["まとめ|セット", "|"]}
+        self.assertFalse(passes(w, item(1, title="缶バッジ まとめ売り")))
+        self.assertFalse(passes(w, item(2, title="缶バッジ 5種セット")))
+        self.assertTrue(passes(w, item(3, title="缶バッジ 単品")))
+        from goodsmare.monitor import query_of
+        w.update(keyword="x", exclude=["まとめ|セット", "空箱"])
+        self.assertEqual(query_of(w).exclude, ["まとめ", "セット", "空箱"])
+
+    def test_parser_rev_rebaselines_without_false_drops(self):
+        # 旧版骏河屋把运费说明里的 5,000 当成了价格；修好之后价格"变低"不能报降价
+        self.cfg.update(lambda c: c["watches"][0].update({"price_drop": True}))
+        self.cycle([item(1, price=5000), item(2, price=5000)])
+        self.assertEqual(self.cycle([item(1, price=5000), item(2, price=5000)]), [])
+        self.src.rev = 2
+        self.assertEqual(self.cycle([item(3, price=900), item(1, price=1790), item(2, price=1020)]), [])
+        self.assertIn("首次扫描", self.status()["message"])
+        hits = self.cycle([item(4), item(3, price=900), item(1, price=1500), item(2, price=1020)])
+        self.assertEqual(sorted((h.item.id, h.kind) for h in hits), [("m1", "drop"), ("m4", "new")])
+
 
 if __name__ == "__main__":
     unittest.main()

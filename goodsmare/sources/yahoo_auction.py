@@ -58,7 +58,7 @@ class YahooAuction(Source):
             buynow = to_int(bonus.get("data-auction-buynowprice")) if bonus else None
             extra = []
             bid = card.select_one(".Product__bid") if card else None
-            if bid and bid.text().strip().isdigit():
+            if bid and bid.text().strip().isdigit() and int(bid.text().strip()) > 0:
                 extra.append(f"{bid.text().strip()}人出价")
             if buynow:
                 extra.append(f"一口价¥{buynow:,}")

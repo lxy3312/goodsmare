@@ -117,22 +117,32 @@ def summary_title(hits: list[Hit]) -> str:
 
 
 _MERCDN_OPTS = re.compile(r"(//static\.mercdn\.net/)c!/([^/]*)/")
+_MERCDN_WEBP = {"/thumb/item/webp/": "/thumb/item/jpeg/", "/item/detail/webp/": "/item/detail/orig/"}
+_SHOPS_WEBP = re.compile(r"(//assets\.mercari-shops-static\.com/.*)@webp$")
 
 
 def cover(it: Item) -> str:
     """推送用的封面图地址。
 
-    煤炉缩略图的地址里可能带 f=webp，企业微信、钉钉这些只认 JPG/PNG，去掉它就是 JPG 版。
+    企业微信、钉钉这些只认 JPG/PNG，网页上给的 WebP 要换成 JPG 版（2026 年 9 月逐个试过）：
+    煤炉 /thumb/item/webp/ → /thumb/item/jpeg/，旧写法 c!/…,f=webp/ 去掉 f=webp；
+    煤炉 Shops 结尾的 @webp → @jpg；骏河屋的 photo.php 会跳到 WebP，换成 pics_light 下的 JPG。
     不是 http(s) 的地址推送渠道用不了，干脆不给。
     """
     url = it.image or ""
     if not url.startswith(("http://", "https://")):
         return ""
+    if it.source == "surugaya" and ("photo.php" in url or url.endswith(".webp")):
+        return f"https://www.suruga-ya.jp/database/pics_light/game/{it.id}.jpg"
 
     def to_jpg(m):
         opts = [o for o in m.group(2).split(",") if o and not o.startswith("f=")]
         return m.group(1) + (f"c!/{','.join(opts)}/" if opts else "")
-    return _MERCDN_OPTS.sub(to_jpg, url)
+    url = _MERCDN_OPTS.sub(to_jpg, url)
+    if "//static.mercdn.net/" in url:
+        for webp, jpg in _MERCDN_WEBP.items():
+            url = url.replace(webp, jpg)
+    return _SHOPS_WEBP.sub(r"\1@jpg", url)
 
 
 def plain_lines(hits: list[Hit], rate: float) -> str:

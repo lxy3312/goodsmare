@@ -44,6 +44,8 @@ class Source:
     key = ""
     name = ""
     home = ""
+    # 解析方式改得让旧记录不可信时（比如以前价格取错了）加一，监控会在这个站重新记一遍基线
+    rev = 1
 
     def __init__(self):
         self.lock = threading.Lock()   # 同一个站同一时刻只发一个请求

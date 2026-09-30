@@ -224,7 +224,7 @@ def main(argv=None):
     for sp in (s, a):
         sp.add_argument("--min", type=int, default=0, help="最低价（日元）")
         sp.add_argument("--max", type=int, default=0, help="最高价（日元）")
-        sp.add_argument("--must", help="标题必须包含的词，逗号分隔")
+        sp.add_argument("--must", help="标题必须包含的词，逗号分隔；写成 A|B 是有一个就行")
         sp.add_argument("--exclude", help="标题不能包含的词，逗号分隔")
     s.add_argument("--limit", type=int, default=30, help="最多显示几条")
     s.add_argument("--dump", help="把原始响应存到这个目录")
