@@ -14,6 +14,11 @@ from .base import Item, NoResults, Query, Source, to_int
 
 API = "https://api.mercari.jp/v2/entities:search"
 
+# itemConditionId：新品、未使用 / 未使用に近い / 目立った傷や汚れなし / やや傷や汚れあり / 傷や汚れあり / 全体的に状態が悪い
+CONDITION = {"1": "全新未使用", "2": "近乎全新", "3": "无明显瑕疵", "4": "略有瑕疵", "5": "有瑕疵", "6": "整体状态差"}
+# shippingPayerId：2 = 送料込み（卖家出），1 = 着払い（买家出）；Shops 是 0
+SHIPPING = {"2": "包邮", "1": "运费买家付"}
+
 
 class Mercari(Source):
     key = "mercari"
@@ -101,6 +106,9 @@ class Mercari(Source):
             if auction:
                 bids = to_int(auction.get("totalBid")) or 0
                 extra.append(f"拍卖·{bids}人出价" if bids else "拍卖")
+            for table, key in ((CONDITION, "itemConditionId"), (SHIPPING, "shippingPayerId")):
+                if table.get(str(it.get(key) or "")):
+                    extra.append(table[str(it[key])])
             thumbs = it.get("thumbnails") or []
             items.append(Item(
                 source="mercari", id=item_id, title=str(it.get("name") or ""), price=price, url=url,

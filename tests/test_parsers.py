@@ -48,7 +48,7 @@ MERCARI = {
     "items": [
         {"id": "m12345678901", "sellerId": "1", "status": "ITEM_STATUS_ON_SALE", "name": "五条悟 缶バッジ",
          "price": "1500", "created": "1700000000", "thumbnails": ["https://static.mercdn.net/thumb/m1.jpg"],
-         "itemType": "ITEM_TYPE_MERCARI"},
+         "itemType": "ITEM_TYPE_MERCARI", "itemConditionId": "3", "shippingPayerId": "2"},
         {"id": "2abcDEF", "name": "ショップの商品", "price": "2000", "itemType": "ITEM_TYPE_BEYOND",
          "shopName": "アニメ屋", "thumbnails": [], "status": "ITEM_STATUS_ON_SALE"},
         {"id": "m999", "name": "オークション", "price": "300", "itemType": "ITEM_TYPE_MERCARI",
@@ -232,6 +232,26 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(items[1].url, "https://auctions.yahoo.co.jp/jp/auction/b1111111111")
         self.assertEqual(items[1].extra, "", "没人出价就不写")
 
+    def test_yahoo_auction_shipping_and_times(self):
+        # 2026 年 9 月真实卡片的结构：属性都挂在标题链接上，运费单独一行
+        html = """<ul><li class="Product"><div class="Product__detail">
+          <h3><a class="Product__titleLink" data-auction-id="f1246522369" data-auction-price="8800"
+            data-auction-title="FISHMANS/NIGHT CRUISING 2018" data-auction-isfreeshipping=""
+            data-cl-params="_cl_vmodule:aal;_cl_position:1;st:1790759254;end:1791390671;prat:2.9;"
+            href="https://auctions.yahoo.co.jp/jp/auction/f1246522369">FISHMANS/NIGHT CRUISING 2018</a></h3>
+          <span class="Product__postage">＋送料770円</span><dd class="Product__bid">0</dd>
+          <span class="Product__time">7日</span></div></li>
+          <li class="Product"><div class="Product__detail">
+          <h3><a class="Product__titleLink" data-auction-id="g2" data-auction-price="500" data-auction-title="包邮的"
+            data-auction-isfreeshipping="1" href="https://auctions.yahoo.co.jp/jp/auction/g2">包邮的</a></h3>
+          <span class="Product__postage">送料無料</span></div></li></ul>"""
+        first, second = YahooAuction.parse(html)
+        self.assertEqual(first.price, 8800)
+        self.assertEqual(first.created, 1790759254)
+        self.assertIn("运费¥770", first.extra)
+        self.assertRegex(first.extra, r"\d+/\d+ \d\d:\d\d截止")
+        self.assertEqual(second.extra, "包邮")
+
     def test_yahoo_auction_empty(self):
         items = YahooAuction.parse("<p>条件に一致する商品は見つかりませんでした。</p>")
         self.assertIsInstance(items, NoResults)
@@ -252,6 +272,7 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(items[0].url, "https://jp.mercari.com/item/m12345678901")
         self.assertEqual(items[0].price, 1500)
         self.assertEqual(items[0].created, 1700000000)
+        self.assertEqual(items[0].extra, "无明显瑕疵 包邮")
         self.assertEqual(items[1].url, "https://jp.mercari.com/shops/product/2abcDEF")
         self.assertIn("アニメ屋", items[1].extra)
         self.assertIn("拍卖", items[2].extra)

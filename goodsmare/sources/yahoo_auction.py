@@ -2,11 +2,13 @@
 
 旧版页面的商品链接上挂着 data-auction-* 属性（对照过开源项目 Yoku 的解析），最好用；
 拿不到时退回 __NEXT_DATA__，再不行就按商品链接兜底。
+链接上的 data-cl-params 里有开始、结束时间（st:秒;end:秒），卡片里有运费（＋送料770円 / 送料無料）。
 """
 
 from __future__ import annotations
 
 import re
+import time
 
 from .. import net
 from ..htmlparse import parse
@@ -20,6 +22,16 @@ EMPTY = ("条件に一致する商品は見つかりませんでした", "に一
 
 def item_url(aid: str) -> str:
     return f"https://auctions.yahoo.co.jp/jp/auction/{aid}"
+
+
+def cl_params(text: str) -> dict:
+    """"_cl_vmodule:aal;st:1790759254;end:1791390671;" → {"st": "1790759254", ...}"""
+    return dict(kv.split(":", 1) for kv in (text or "").split(";") if ":" in kv)
+
+
+def ends_at(ts: int) -> str:
+    t = time.localtime(ts)
+    return f"{t.tm_mon}/{t.tm_mday} {t.tm_hour:02d}:{t.tm_min:02d}截止"
 
 
 class YahooAuction(Source):
@@ -62,11 +74,22 @@ class YahooAuction(Source):
                 extra.append(f"{bid.text().strip()}人出价")
             if buynow:
                 extra.append(f"一口价¥{buynow:,}")
+            postage = card.select_one(".Product__postage") if card else None
+            post_text = postage.text() if postage else ""
+            if (bonus is not None and bonus.get("data-auction-isfreeshipping") in ("1", "true")) or "送料無料" in post_text:
+                extra.append("包邮")
+            elif parse_yen(post_text):
+                extra.append(f"运费¥{parse_yen(post_text):,}")
+            params = cl_params(a.get("data-cl-params") or (bonus.get("data-cl-params") if bonus is not None else ""))
+            end = to_int(params.get("end")) or 0
+            if end:
+                extra.append(ends_at(end))
             image = a.get("data-auction-img") or img_src(card.select_one("img") if card else None)
             items.append(Item(
                 source="yahoo_auction", id=aid,
                 title=a.get("data-auction-title") or a.get("title") or a.text(),
                 price=price, url=item_url(aid), image=image, extra=" ".join(extra),
+                created=to_int(params.get("st")) or 0,
             ))
         if items:
             return items
