@@ -1279,7 +1279,9 @@ function openChannel(c) {
 
 function renderChFields(values) {
   const t = S.channel_types[$("#chType").value];
-  $("#chFields").innerHTML = t.fields.map(fd => `
+  $("#chFields").innerHTML = t.fields.map(fd => fd.kind === "bool" ? `
+    <div class="switches"><label class="row-switch"><span>${esc(fd.label)}<small>${esc(fd.hint)}</small></span>
+      <span class="switch"><input type="checkbox" data-key="${fd.key}" ${values[fd.key] === false ? "" : "checked"}><span></span></span></label></div>` : `
     <label class="field"><span>${esc(fd.label)}${fd.required ? "" : "（可选）"}</span>
       <input type="${/password|secret|token|key/.test(fd.key) ? "password" : "text"}" data-key="${fd.key}" value="${esc(values[fd.key] || "")}" ${fd.required ? "required" : ""} autocomplete="off">
       <small>${esc(fd.hint)}</small></label>`).join("");
@@ -1288,7 +1290,7 @@ function renderChFields(values) {
 function channelFromForm() {
   const f = $("#chForm");
   const c = { id: f.dataset.id || "", type: $("#chType").value, name: f.name.value.trim(), enabled: f.enabled.checked };
-  $$("#chFields input").forEach(i => c[i.dataset.key] = i.value.trim());
+  $$("#chFields input").forEach(i => c[i.dataset.key] = i.type === "checkbox" ? i.checked : i.value.trim());
   return c;
 }
 

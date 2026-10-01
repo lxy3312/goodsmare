@@ -3,8 +3,8 @@
 一轮扫描的所有命中合成一次推送（Server酱免费版一天只有 5 条，省着用）；
 Bark / ntfy / Telegram 这类手机通知逐条发，超出上限的合成一条汇总。
 
-手机能连上本程序时（见 access.py），每轮还会生成一个推送页（pages.py）：企业微信、Bark、ntfy
-点开去推送页上对应的那一件，其他渠道在开头放一个推送页的链接。连不上就直接去商品页。
+手机能连上本程序时（见 access.py），每轮还会生成一个推送页（pages.py）：Bark、ntfy 点开去推送页上
+对应的那一件，企业微信和其他渠道在开头放一个推送页的链接。连不上就直接去商品页。
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def link(h: Hit, ctx: Ctx, i: int) -> str:
     return f"{ctx.page_url}#i{i + 1}" if ctx.page_url else h.item.url
 
 
-# 每种渠道需要填的字段，网页的表单按这个生成。(字段, 标签, 说明, 是否必填)
+# 每种渠道需要填的字段，网页的表单按这个生成。(字段, 标签, 说明, 是否必填[, "bool" 表示开关，默认开])
 CHANNEL_TYPES = {
     "serverchan": ("Server酱（微信）", [
         ("sendkey", "SendKey", "sct.ftqq.com 登录后获取；Server酱³ 的 sctp 开头的 key 也行", True)]),
@@ -58,7 +58,8 @@ CHANNEL_TYPES = {
         ("token", "Token", "www.pushplus.plus 登录后获取", True),
         ("topic", "群组编码", "一对多推送时填，可空", False)]),
     "wecom": ("企业微信群机器人", [
-        ("webhook", "Webhook 地址", "群设置 → 群机器人 → 添加，复制 Webhook 地址", True)]),
+        ("webhook", "Webhook 地址", "群设置 → 群机器人 → 添加，复制 Webhook 地址", True),
+        ("rich", "一条消息里放下图片、价格和链接", "企业微信太旧、显示不了这种消息的话关掉，改回一件一张的图文卡片", False, "bool")]),
     "bark": ("Bark（iPhone）", [
         ("key", "设备 Key", "Bark App 首页的链接里 api.day.app/ 后面那段", True),
         ("server", "服务器", "自建时填，默认 https://api.day.app", False)]),
@@ -283,7 +284,66 @@ def send_pushplus(ch, hits, ctx):
     _expect(resp, "PushPlus", lambda d: d.get("code") == 200)
 
 
+# markdown 里有特殊含义的字符换成全角，标题里出现也不会把格式弄乱
+_MD_PLAIN = str.maketrans({"[": "［", "]": "］", "*": "＊", "_": "＿", "`": "｀", "|": "｜", "<": "＜", ">": "＞",
+                           "#": "＃", "~": "～"})
+
+
+def _md_url(url: str) -> str:
+    return url.replace(" ", "%20").replace("(", "%28").replace(")", "%29")
+
+
+def wecom_markdown(hits: list[Hit], ctx: Ctx, limit: int = 4000) -> list[str]:
+    """企业微信 markdown_v2：一条消息里每件一段，标题、大图、价格、成色、原链接。
+
+    原链接按网址原样显示，点得开，长按消息也能复制。一条最多 4096 字节，放不下就拆成几条。
+    """
+    names = {h.watch_name for h in hits}
+    head = f"### {summary_title(hits).replace(f'【{APP_NAME}】', '').strip().translate(_MD_PLAIN)}"
+    if ctx.page_url:
+        head += f"\n\n[{PAGE_LABEL}]({_md_url(ctx.page_url)})"
+    out, cur = [], head
+    for h in hits:
+        it = h.item
+        info = " · ".join(p for p in (it.extra, f"关注：{h.watch_name}" if len(names) > 1 else "") if p)
+        lines = [f"**【{src_name(it.source)}】{it.title[:150].translate(_MD_PLAIN)}**"]
+        if photo(it):
+            lines.append(f"![]({_md_url(photo(it))})")
+        lines.append(f"**{headline(h, ctx.rate)}**" + (f" · {info.translate(_MD_PLAIN)}" if info else ""))
+        lines.append(f"[{it.url}]({_md_url(it.url)})")
+        block = "\n\n".join(lines)
+        if len(f"{cur}\n\n---\n\n{block}".encode("utf-8")) > limit:
+            out.append(cur)
+            cur = block
+        else:
+            cur = f"{cur}\n\n---\n\n{block}"
+    out.append(cur)
+    return out
+
+
+def on(ch: dict, key: str) -> bool:
+    """开关类的字段：没填就是开。"""
+    return str(ch.get(key, True)).strip().lower() not in ("false", "0", "off", "no", "")
+
+
+def _wecom_rejects_type(err: RuntimeError) -> bool:
+    """企业微信接口说不认识这种消息（老接口没有 markdown_v2）。"""
+    msg = str(err).lower()
+    return "40008" in msg or "msgtype" in msg or "message type" in msg
+
+
 def send_wecom(ch, hits, ctx):
+    if on(ch, "rich"):
+        for n, md in enumerate(wecom_markdown(hits, ctx)):
+            resp = net.post(ch["webhook"], json_body={"msgtype": "markdown_v2", "markdown_v2": {"content": md}})
+            try:
+                _expect(resp, "企业微信", lambda d: d.get("errcode") == 0)
+            except RuntimeError as e:
+                if n == 0 and _wecom_rejects_type(e):
+                    break   # 接口不认，下面退回图文卡片
+                raise
+        else:
+            return
     # 图文消息一条最多 8 篇。第一篇是大图，后面是小图；只有一篇时才显示描述，所以价格写进标题
     for i in range(0, len(hits), 8):
         articles = [{
@@ -336,7 +396,8 @@ def send_bark(ch, hits, ctx):
     single, rest = _per_item(hits)
     msgs = [{"title": f"{src_name(h.item.source)}｜{h.watch_name}",
              "body": f"{h.item.title}\n{headline(h, ctx.rate)}",
-             "url": link(h, ctx, i), "icon": cover(h.item), "image": photo(h.item)} for i, h in enumerate(single)]
+             "url": link(h, ctx, i), "icon": cover(h.item), "image": photo(h.item),
+             "copy": h.item.url} for i, h in enumerate(single)]   # 长按通知复制的是原链接
     if rest:
         msgs.append({"title": f"还有 {len(rest)} 件", "body": summary_title(rest),
                      "url": link(rest[0], ctx, len(single)) if ctx.page_url else ctx.web_url or rest[0].item.url})
@@ -438,7 +499,7 @@ def missing_fields(ch: dict) -> list[str]:
     spec = CHANNEL_TYPES.get(ch.get("type"))
     if not spec:
         return ["type"]
-    return [label for key, label, _, required in spec[1] if required and not ch.get(key)]
+    return [f[1] for f in spec[1] if f[3] and not ch.get(f[0])]
 
 
 def send(ch: dict, hits: list[Hit], ctx: Ctx) -> None:

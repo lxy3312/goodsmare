@@ -91,32 +91,77 @@ class NotifyTests(unittest.TestCase):
         self.assertEqual(text.split("\n\n")[-1], "[👉 打开商品页](https://www.suruga-ya.jp/product/detail/0)")
 
     def test_wecom_chunks_articles_by_8(self):
-        calls = self.send({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x"}, n=10)
+        calls = self.send({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x", "rich": False}, n=10)
         self.assertEqual([len(c[1]["json_body"]["news"]["articles"]) for c in calls], [8, 2])
         art = calls[0][1]["json_body"]["news"]["articles"][0]
         self.assertEqual(art["picurl"], "https://img/0.jpg")
         self.assertEqual(art["url"], "https://www.suruga-ya.jp/product/detail/0")
 
     def test_wecom_shows_price_and_big_first_image(self):
-        calls = self.send({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x"}, n=2)
+        calls = self.send({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x", "rich": False}, n=2)
         arts = calls[0][1]["json_body"]["news"]["articles"]
         # 多篇图文只显示标题，价格得写进标题
         self.assertEqual(arts[0]["title"], "【骏河屋】¥1,000 缶バッジ 0")
         self.assertIn("≈50元", arts[0]["description"])
         self.assertIn("中古", arts[0]["description"])
 
+    def test_wecom_one_message_with_everything(self):
+        many = hits(2)
+        many[0].item.title = "【美品】*G-SHOCK* [限定] #1"
+        cap = Capture()
+        with mock.patch.object(net, "post", cap):
+            notify.send({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x"}, many, CTX)
+        self.assertEqual([c[1]["json_body"]["msgtype"] for c in cap.calls], ["markdown_v2"], "一次推送就一条")
+        md = cap.calls[0][1]["json_body"]["markdown_v2"]["content"]
+        self.assertTrue(md.startswith("### 五条悟吧唧 上新 2 件"))
+        self.assertIn("**【骏河屋】【美品】＊G-SHOCK＊ ［限定］ ＃1**", md, "标题里的 markdown 符号换成全角")
+        self.assertIn("![](https://img/0.jpg)", md)
+        self.assertIn("**¥1,000（≈50元）** · 中古", md)
+        self.assertIn("[https://www.suruga-ya.jp/product/detail/0](https://www.suruga-ya.jp/product/detail/0)", md,
+                      "原链接原样显示：点得开，长按也能复制")
+        self.assertNotIn("关注：", md, "只有一个关注时不用每件都写")
+        # 关掉以后改回一件一张的图文卡片
+        calls = self.send({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x", "rich": False})
+        self.assertEqual([c[1]["json_body"]["msgtype"] for c in calls], ["news"])
+
+    def test_wecom_falls_back_to_cards_when_markdown_v2_is_unknown(self):
+        def reply(url):
+            return {"errcode": 0}
+        cap = Capture(reply)
+
+        def post(url, **kw):
+            cap(url, **kw)
+            body = {"errcode": 40008, "errmsg": "invalid message type"} if kw["json_body"]["msgtype"] == "markdown_v2" \
+                else {"errcode": 0}
+            return net.Response(200, url, {"Content-Type": "application/json"}, json.dumps(body).encode())
+        with mock.patch.object(net, "post", post):
+            notify.send({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x"}, hits(2), CTX)
+        self.assertEqual([c[1]["json_body"]["msgtype"] for c in cap.calls], ["markdown_v2", "news"])
+
+    def test_wecom_markdown_is_split_under_the_limit(self):
+        many = hits(40)
+        mds = notify.wecom_markdown(many, Ctx(rate=0.05, page_url="http://pc:8787/p/AbCdEfGhIjKlMnOp"))
+        self.assertGreater(len(mds), 1)
+        self.assertTrue(all(len(m.encode("utf-8")) <= 4096 for m in mds))
+        self.assertIn("(http://pc:8787/p/AbCdEfGhIjKlMnOp)", mds[0])
+        joined = "\n".join(mds)
+        for h in many:
+            self.assertIn(f"[{h.item.url}]", joined)
+
     def test_page_links(self):
         ctx = Ctx(rate=0.05, web_url="http://pc:8787", page_url="http://pc:8787/p/AbCdEfGhIjKlMnOp")
-        cap = Capture({"code": 200, "errcode": 0, "ok": True})
-        with mock.patch.object(net, "post", cap):
-            notify.send({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x"}, hits(2), ctx)
-            notify.send({"type": "bark", "key": "K"}, hits(notify.PER_ITEM_LIMIT + 2), ctx)
-            notify.send({"type": "ntfy", "topic": "t"}, hits(1), ctx)
-            notify.send({"type": "serverchan", "sendkey": "SCT1"}, hits(1), ctx)
-            notify.send({"type": "webhook", "url": "http://x"}, hits(1), ctx)
-        wecom, bark, ntfy, sc, hook = (cap.calls[0], cap.calls[1:2 + notify.PER_ITEM_LIMIT],
-                                       cap.calls[2 + notify.PER_ITEM_LIMIT], cap.calls[3 + notify.PER_ITEM_LIMIT],
-                                       cap.calls[4 + notify.PER_ITEM_LIMIT])
+        def sent(ch, n=1):
+            cap = Capture({"code": 200, "errcode": 0, "ok": True})
+            with mock.patch.object(net, "post", cap):
+                notify.send(ch, hits(n), ctx)
+            return cap.calls
+        wecom, = sent({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x", "rich": False}, 2)
+        md, = sent({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x"}, 2)
+        bark = sent({"type": "bark", "key": "K"}, notify.PER_ITEM_LIMIT + 2)
+        ntfy, = sent({"type": "ntfy", "topic": "t"})
+        sc, = sent({"type": "serverchan", "sendkey": "SCT1"})
+        hook, = sent({"type": "webhook", "url": "http://x"})
+        self.assertIn(f"]({ctx.page_url})", md[1]["json_body"]["markdown_v2"]["content"])
         arts = wecom[1]["json_body"]["news"]["articles"]
         self.assertEqual([a["url"] for a in arts], [ctx.page_url + "#i1", ctx.page_url + "#i2"])
         self.assertEqual(bark[0][1]["json_body"]["url"], ctx.page_url + "#i1")
@@ -158,6 +203,7 @@ class NotifyTests(unittest.TestCase):
         self.assertEqual(len(calls), notify.PER_ITEM_LIMIT + 1)
         self.assertEqual(calls[0][0], "https://api.day.app/push")
         self.assertEqual(calls[0][1]["json_body"]["url"], "https://www.suruga-ya.jp/product/detail/0")
+        self.assertEqual(calls[0][1]["json_body"]["copy"], "https://www.suruga-ya.jp/product/detail/0")
         self.assertIn("还有 3 件", calls[-1][1]["json_body"]["title"])
 
     def test_dingtalk_sign(self):

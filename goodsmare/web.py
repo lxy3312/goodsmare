@@ -50,7 +50,8 @@ class App:
             "config": cfg,
             "sources": [{"key": k, "name": SOURCES[k].name, "home": SOURCES[k].home} for k in ALL_SOURCES],
             "channel_types": {k: {"label": v[0], "fields": [
-                {"key": f[0], "label": f[1], "hint": f[2], "required": f[3]} for f in v[1]]}
+                {"key": f[0], "label": f[1], "hint": f[2], "required": f[3], "kind": f[4] if len(f) > 4 else "text"}
+                for f in v[1]]}
                 for k, v in notify.CHANNEL_TYPES.items()},
             "status": self.store.statuses(),
             "monitor": {"busy": m.busy, "last_cycle_at": int(m.last_cycle_at),
