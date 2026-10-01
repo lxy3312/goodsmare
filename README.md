@@ -33,7 +33,7 @@ claude搓出来的日淘上新提醒程序。替你盯着日本二手站。谷�
 ## 快速开始
 
 1. 安装 [Python 3.9 或更新版本](https://www.python.org/downloads/)。Windows 安装时勾选 **Add python.exe to PATH**。
-2. [下载本项目](https://github.com/lxy3312/goodsmare/archive/refs/heads/main.zip)并解压。
+2. 打开[最新版本的发布页](https://github.com/lxy3312/goodsmare/releases/latest)，下载 Source code (zip) 并解压。
 3. Windows 双击 `start.bat`；macOS / Linux 运行 `./start.sh`。
 4. 浏览器会自动打开 <http://127.0.0.1:8787>。在「关注」里填关键词，在「推送」里配好渠道，点「发一条测试」。
 
