@@ -307,6 +307,14 @@ main { max-width: 1280px; margin: 0 auto; padding: 24px 24px 72px; }
 .trouble { padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
 .trouble summary { cursor: pointer; width: fit-content; font-weight: 650; color: var(--accent-ink); }
 .trouble ol { margin: 10px 0 0; padding-left: 20px; line-height: 1.8; max-width: 760px; }
+.migrate { display: grid; gap: 14px; padding: 20px 22px; }
+.migrate > p { margin: 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.7; max-width: 760px; }
+.migrate .custom-url { margin: 0; max-width: 760px; }
+.migrate-report { margin: 0; padding: 14px 16px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line);
+  font: 13px/1.75 var(--font); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.migrate-report.bad { background: var(--err-soft); border-color: color-mix(in srgb, var(--err) 32%, transparent); color: color-mix(in srgb, var(--err) 80%, var(--ink)); }
+.migrate-report.done { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 32%, transparent); }
+.migrate-go { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 /* —— 弹窗 —— */
 dialog { border: 0; padding: 0; width: min(720px, calc(100vw - 24px)); max-height: min(900px, calc(100vh - 32px)); max-height: min(900px, calc(100dvh - 32px));
@@ -575,6 +583,13 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
           <li>上面列了好几个地址的话，换一个试试。</li>
         </ol>
       </details>
+    </div>
+    <h3 class="sec-h">从旧版迁移</h3>
+    <div class="panel migrate">
+      <p>把旧版 goodsmare（或者改名前的 ritao）的关注、推送渠道、上新记录和见过的商品并进来，两边的东西都留着。旧文件夹里的文件不会被改，合并前会把现在的数据整份备份一份。</p>
+      <div class="custom-url"><input type="text" id="migratePath" placeholder="旧版的文件夹，比如 D:\Downloads\ritao" autocomplete="off" aria-label="旧版的文件夹"><button id="migrateCheck"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg>先看看</button></div>
+      <pre class="migrate-report" id="migrateReport" hidden></pre>
+      <div class="migrate-go" id="migrateGo" hidden><button class="primary" id="migrateApply"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>合并</button><span class="hint">合并完把旧版关掉，不然两边会各推一遍。</span></div>
     </div>
     <h3 class="sec-h">其他</h3>
     <div class="panel misc">
@@ -1279,6 +1294,31 @@ $("#pushMode").addEventListener("click", e => {
 });
 $("#copyPhone").onclick = async e => {
   toast(await copyText(e.currentTarget.dataset.copy) ? "已复制，发到手机上打开" : "复制不了，手动抄一下上面的地址", false);
+};
+
+function showMigrate(text, cls) {
+  const box = $("#migrateReport");
+  box.textContent = text; box.className = "migrate-report" + (cls ? " " + cls : ""); box.hidden = false;
+}
+$("#migrateCheck").onclick = async () => {
+  const path = $("#migratePath").value.trim(), b = $("#migrateCheck");
+  if (!path) { toast("先填旧版的文件夹", true); $("#migratePath").focus(); return; }
+  b.disabled = true; $("#migrateGo").hidden = true; showMigrate("正在读旧数据…");
+  try { const d = await api("/api/migrate", { path }); showMigrate(d.report); $("#migrateGo").hidden = !d.changes; }
+  catch (e) { showMigrate(e.message, "bad"); }
+  finally { b.disabled = false; }
+};
+$("#migratePath").addEventListener("input", () => { $("#migrateGo").hidden = true; });   // 换了文件夹要重新看
+$("#migratePath").addEventListener("keydown", e => { if (e.key === "Enter") $("#migrateCheck").click(); });
+$("#migrateApply").onclick = async () => {
+  if (!confirm("按上面说的合并？合并前会先备份现在的数据。")) return;
+  const b = $("#migrateApply"); b.disabled = true;
+  try {
+    const d = await api("/api/migrate", { path: $("#migratePath").value.trim(), apply: true });
+    showMigrate(d.report, "done"); $("#migrateGo").hidden = true; toast("合并好了");
+    await refresh(); loadFeed(true);
+  } catch (e) { showMigrate(e.message, "bad"); }
+  finally { b.disabled = false; }
 };
 
 $("#clearFeed").onclick = async () => {

@@ -23,6 +23,15 @@ def is_loopback(host: str) -> bool:
     return host in LOOPBACK
 
 
+def port_busy(port: int) -> bool:
+    """本机这个端口上有没有程序在听。Windows 上两个程序能同时监听同一个端口，所以动手前先敲一下门。"""
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=0.5):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
 def new_token() -> str:
     return secrets.token_urlsafe(9)   # 12 个字符
 

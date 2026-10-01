@@ -170,12 +170,33 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.server.server_address[1], self.port, "端口不变")
         self.assertEqual(self.req("GET", "/api/state")[0], 200)
 
+    def test_migrate_from_web(self):
+        old = Path(self.tmp.name) / "old" / "data"
+        old.mkdir(parents=True)
+        ConfigStore(old / "config.json").save({"watches": [{"id": "o1", "keyword": "fishmans"}]})
+        st = Store(old / "ritao.db")
+        st.add_feed(Hit(Item(source="mercari", id="m1", title="t", price=1, url="https://jp.mercari.com/item/m1"),
+                        "o1", "fishmans"))
+        st.db.close()
+        status, body = self.req("POST", "/api/migrate", {"path": f' "{old.parent}" '})
+        self.assertEqual(status, 200, body)
+        self.assertIn("只是看看", body["report"])
+        self.assertGreater(body["changes"], 0)
+        self.assertEqual(self.store.feed(), [], "只看看不写")
+        status, body = self.req("POST", "/api/migrate", {"path": str(old.parent), "apply": True})
+        self.assertEqual(status, 200, body)
+        self.assertIn("核对过了", body["report"])
+        self.assertEqual([r["item_id"] for r in self.store.feed()], ["m1"])
+        self.assertEqual([w["id"] for w in self.cfg.load()["watches"]], ["o1"])
+        status, body = self.req("POST", "/api/migrate", {"path": str(Path(self.tmp.name) / "nope")})
+        self.assertEqual(status, 400)
+        self.assertIn("没找到", body["error"])
+
     def test_port_busy_check(self):
         # 旧版还开着时先发现，别让两个程序抢同一个端口
-        from goodsmare.__main__ import _port_busy
-        self.assertTrue(_port_busy(self.port))
+        self.assertTrue(access.port_busy(self.port))
         self.server.close()
-        self.assertFalse(_port_busy(self.port))
+        self.assertFalse(access.port_busy(self.port))
         self.server = serve(App(self.cfg, self.store, self.mon), "127.0.0.1", 0)   # 给 tearDown 关
 
     def test_qr_svg(self):

@@ -5,12 +5,12 @@
   python -m goodsmare search 煤炉 初音ミク   试搜某个网站，看解析得对不对
   python -m goodsmare add 五条悟 缶バッジ --max 3000
   python -m goodsmare list | rm ID | test-notify | sources
+  python -m goodsmare migrate 旧文件夹 [--apply]   把旧版的数据并进来（不加 --apply 只看看）
 """
 
 from __future__ import annotations
 
 import argparse
-import socket
 import sys
 import time
 import webbrowser
@@ -58,15 +58,6 @@ def _source(name: str) -> str:
     return key
 
 
-def _port_busy(port: int) -> bool:
-    """Windows 上两个程序能同时监听同一个端口（比如旧版还开着），请求会随机落到其中一个。先敲一下门。"""
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
-            return True
-    except OSError:
-        return False
-
-
 def cmd_run(args):
     cfgstore, store = _stores(args)
     cfg = cfgstore.load()
@@ -81,7 +72,7 @@ def cmd_run(args):
         print("网页对局域网开放了，已经自动设了一个口令（在 data/config.json 的 web.token 里）。")
     cfg = cfgstore.load()
     token = cfg["web"]["token"]
-    if _port_busy(port):
+    if access.port_busy(port):
         sys.exit(f"端口 {port} 已经有程序在用了：是不是之前开的 {APP_NAME}（或者旧版）还没关？"
                  f"关掉它再开，或者换个端口：python -m goodsmare --port {port + 1}")
 
@@ -211,6 +202,14 @@ def cmd_test_notify(args):
             print(f"✗ {name}：{e}")
 
 
+def cmd_migrate(args):
+    from . import migrate
+    try:
+        print(migrate.run(args.source, Path(args.data), apply=args.apply)[0])
+    except migrate.MigrateError as e:
+        sys.exit(f"没有合并：{e}")
+
+
 def cmd_sources(args):
     for key in ALL_SOURCES:
         print(f"{key:<14} {SOURCES[key].name:<8} {SOURCES[key].home}")
@@ -255,11 +254,15 @@ def main(argv=None):
     rm.add_argument("id")
     sub.add_parser("test-notify", help="给所有推送渠道发一条测试")
     sub.add_parser("sources", help="支持的网站")
+    mg = sub.add_parser("migrate", help="把旧版（或另一份 goodsmare）的数据并进来")
+    mg.add_argument("source", help="旧版的文件夹，或者它的 data 文件夹")
+    mg.add_argument("--apply", action="store_true", help="真的合并；不加只说会怎么合并")
 
     args = p.parse_args(argv)
     {
         None: cmd_run, "run": cmd_run, "once": cmd_once, "search": cmd_search, "add": cmd_add,
         "list": cmd_list, "rm": cmd_rm, "test-notify": cmd_test_notify, "sources": cmd_sources,
+        "migrate": cmd_migrate,
     }[args.cmd](args)
 
 

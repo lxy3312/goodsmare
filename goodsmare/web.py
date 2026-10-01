@@ -17,7 +17,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import APP_NAME, __version__, access, net, notify, pages, qr
+from . import APP_NAME, __version__, access, migrate, net, notify, pages, qr
 from .access import LOOPBACK
 from .config import ALL_SOURCES, ConfigStore, normalize_channel, normalize_watch
 from .monitor import Monitor, passes, query_of
@@ -173,6 +173,23 @@ class App:
         # 刚生成口令时，这个浏览器也得拿到它，不然下一次刷新就被拦在外面
         return {"_cookie": token} if token else {}
 
+    def migrate(self, body: dict) -> dict:
+        """从旧版迁移。apply 为假时只说会怎么合并；真合并时先停下扫描，用正在用的连接写。"""
+        path = str(body.get("path") or "").strip().strip('"').strip()
+        if not path:
+            raise ValueError("先填旧版的文件夹")
+        data_dir = self.cfgstore.path.parent
+        if not body.get("apply"):
+            text, changes = migrate.run(path, data_dir, store=self.store, cfgstore=self.cfgstore)
+            return {"report": text, "changes": changes}
+        if not self.monitor._cycle_lock.acquire(timeout=90):
+            raise ValueError("正在扫描，过一会儿再试")
+        try:
+            text, _ = migrate.run(path, data_dir, apply=True, store=self.store, cfgstore=self.cfgstore)
+        finally:
+            self.monitor._cycle_lock.release()
+        return {"report": text, "applied": True}
+
     def preview(self, body: dict) -> dict:
         """新建关注前先搜一下看看：直接返回搜索结果，不入库。"""
         watch = normalize_watch(body)
@@ -203,7 +220,7 @@ POSTS = {
     "/api/channel": "save_channel", "/api/channel/delete": "delete_channel",
     "/api/channel/test": "test_channel",
     "/api/preview": "preview", "/api/scan": "scan", "/api/feed/clear": "clear_feed",
-    "/api/access": "save_access",
+    "/api/access": "save_access", "/api/migrate": "migrate",
 }
 
 
