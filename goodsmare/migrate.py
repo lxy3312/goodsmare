@@ -269,11 +269,13 @@ def write(pl: Plan, src_cfg: dict, data_dir: Path, store: Store | None = None,
     网页里合并时传进正在用的 store、cfgstore，用同一个连接写；命令行合并时自己打开。
     """
     data_dir.mkdir(parents=True, exist_ok=True)
-    backup = data_dir / time.strftime("迁移前备份-%Y%m%d-%H%M%S")
+    # 中文别放进 strftime：Python 3.9 在英文 Windows 上会按系统编码处理格式串，编不了中文就报错
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup = data_dir / f"迁移前备份-{stamp}"
     n = 1
     while backup.exists():
         n += 1
-        backup = data_dir / time.strftime(f"迁移前备份-%Y%m%d-%H%M%S-{n}")
+        backup = data_dir / f"迁移前备份-{stamp}-{n}"
     backup.mkdir()
     cfg_path, db_path = data_dir / "config.json", data_dir / "goodsmare.db"
     if cfg_path.exists():
