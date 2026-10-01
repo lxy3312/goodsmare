@@ -202,8 +202,11 @@ class Monitor:
 
         fresh: list[Hit] = []
         keys = set()
+        blocked = self.store.blocked_keys()
         for h in found:
             k = (h.item.source, h.item.id, h.kind)
+            if (h.item.source, h.item.id) in blocked:   # 用户屏蔽过的，降价了也不推
+                continue
             if k in keys or self.store.already_pushed(h.item.source, h.item.id, h.kind, h.item.price):
                 continue
             keys.add(k)

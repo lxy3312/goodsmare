@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS status (
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS page (id TEXT PRIMARY KEY, created INTEGER, data TEXT);
+CREATE TABLE IF NOT EXISTS blocked (
+    source TEXT, item_id TEXT, watch_id TEXT, at INTEGER,
+    PRIMARY KEY (source, item_id)
+);
 """
 
 FEED_KEEP = 3000
@@ -122,10 +126,9 @@ class Store:
         if source:
             where.append("source = ?")
             args.append(source)
-        sql = "SELECT * FROM feed"
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY id DESC LIMIT ?"
+        # 屏蔽了的商品不显示
+        where.append("NOT EXISTS (SELECT 1 FROM blocked b WHERE b.source = feed.source AND b.item_id = feed.item_id)")
+        sql = "SELECT * FROM feed WHERE " + " AND ".join(where) + " ORDER BY id DESC LIMIT ?"
         args.append(max(1, min(int(limit), 500)))
         with self._lock:
             return [dict(r) for r in self.db.execute(sql, args)]
@@ -133,6 +136,36 @@ class Store:
     def clear_feed(self) -> None:
         with self._lock:
             self.db.execute("DELETE FROM feed")
+            self.db.commit()
+
+    # —— 屏蔽：和关键词不相干的商品，不再显示、也不再推送 ——
+    def block(self, items) -> int:
+        """items: [(网站, 商品 ID, 关注 ID)]。返回新屏蔽了几件。"""
+        now = int(time.time())
+        with self._lock:
+            before = self.blocked_count()
+            self.db.executemany("INSERT OR IGNORE INTO blocked VALUES (?,?,?,?)",
+                                [(s, i, w, now) for s, i, w in items])
+            self.db.commit()
+            return self.blocked_count() - before
+
+    def unblock(self, items) -> None:
+        """items: [(网站, 商品 ID)]"""
+        with self._lock:
+            self.db.executemany("DELETE FROM blocked WHERE source=? AND item_id=?", list(items))
+            self.db.commit()
+
+    def blocked_keys(self) -> set:
+        with self._lock:
+            return {(r["source"], r["item_id"]) for r in self.db.execute("SELECT source, item_id FROM blocked")}
+
+    def blocked_count(self) -> int:
+        with self._lock:
+            return self.db.execute("SELECT COUNT(*) FROM blocked").fetchone()[0]
+
+    def clear_blocked(self) -> None:
+        with self._lock:
+            self.db.execute("DELETE FROM blocked")
             self.db.commit()
 
     # —— 状态 ——

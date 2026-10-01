@@ -192,6 +192,49 @@ class WebTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("没找到", body["error"])
 
+    def add_feed(self, item_id, title, watch_id="w1", name="ミドリ cd"):
+        self.store.add_feed(Hit(Item(source="mercari", id=item_id, title=title, price=1000,
+                                     url=f"https://jp.mercari.com/item/{item_id}"), watch_id, name))
+
+    def test_block_items_and_words(self):
+        self.cfg.update(lambda c: c.update({"watches": [
+            {"id": "w1", "name": "ミドリ cd", "keyword": "ミドリ cd", "exclude": ["まとめ売り"]},
+            {"id": "w2", "name": "boris", "keyword": "boris"}]}))
+        self.add_feed("m1", "SEIKO 自動巻き腕時計 グリーン文字盤")
+        self.add_feed("m2", "【美品】G-SHOCK グリーン カシオ")
+        self.add_feed("m3", "ヤマトミチ ul ビッグポケット シャツ スレートグリーン")   # 也没有ミドリ，选了「顺带藏起来」会一起屏蔽
+        self.add_feed("m4", "ミドリ ファーストパンチ CD 帯付き")                       # 真货，不能动
+        self.add_feed("b1", "BORIS / Pink LP", "w2", "boris")
+        status, d = self.req("POST", "/api/block", {
+            "items": [{"source": "mercari", "item_id": "m1", "watch_id": "w1"},
+                      {"source": "mercari", "item_id": "m2", "watch_id": "w1"}],
+            "watches": {"w1": {"must_add": ["ミドリ"], "exclude_add": ["腕時計", "ｸﾞﾘｰﾝ", "まとめ売り", " "]}},
+            "hide_failing": True})
+        self.assertEqual(status, 200, d)
+        w1 = self.cfg.load()["watches"][0]
+        self.assertEqual(w1["must"], ["ミドリ"])
+        self.assertEqual(w1["exclude"], ["まとめ売り", "腕時計", "ｸﾞﾘｰﾝ"], "已有的、空的不重复加")
+        self.assertEqual(d["watches"], ["ミドリ cd"])
+        self.assertEqual(sorted(i["item_id"] for i in d["undo"]["items"]), ["m1", "m2", "m3"])
+        self.assertEqual(sorted(r["item_id"] for r in self.store.feed()), ["b1", "m4"])
+        _, state = self.req("GET", "/api/state")
+        self.assertEqual(state["blocked"], 3)
+        # 撤销：商品放回来，关注改回原样
+        status, _ = self.req("POST", "/api/unblock", d["undo"])
+        self.assertEqual(status, 200)
+        self.assertEqual(len(self.store.feed()), 5)
+        w1 = self.cfg.load()["watches"][0]
+        self.assertEqual((w1["must"], w1["exclude"]), ([], ["まとめ売り"]))
+
+    def test_block_only_items_and_restore_all(self):
+        self.add_feed("m1", "Hello Kitty ブレスレット")
+        status, d = self.req("POST", "/api/block", {"items": [{"source": "mercari", "item_id": "m1", "watch_id": "gone"}]})
+        self.assertEqual((status, d["blocked"], d["watches"]), (200, 1, []))
+        self.assertEqual(self.store.feed(), [])
+        self.req("POST", "/api/blocked/clear", {})
+        self.assertEqual(len(self.store.feed()), 1)
+        self.assertEqual(self.req("POST", "/api/block", {"watches": "x"})[0], 400)
+
     def test_port_busy_check(self):
         # 旧版还开着时先发现，别让两个程序抢同一个端口
         self.assertTrue(access.port_busy(self.port))

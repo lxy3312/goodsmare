@@ -160,6 +160,16 @@ class MonitorTests(unittest.TestCase):
         self.assertTrue(ctx.page_url.startswith("http://pc:8787/p/"))
         self.assertEqual(self.store.page(ctx.page_url.rsplit("/", 1)[1])["items"][0]["id"], "m2")
 
+    def test_blocked_items_are_never_pushed(self):
+        self.cfg.update(lambda c: c["watches"][0].update({"price_drop": True}))
+        self.cycle([item(1), item(2)])
+        self.store.block([("mercari", "m3", "w1"), ("mercari", "m2", "w1")])
+        hits = self.cycle([item(3), item(2, price=500), item(1)])
+        self.assertEqual(hits, [], "屏蔽过的，上新、降价都不推")
+        self.assertEqual(self.store.feed(), [])
+        hits = self.cycle([item(4), item(3), item(2, price=400), item(1)])
+        self.assertEqual([h.item.id for h in hits], ["m4"])
+
     def test_test_push_uses_latest_real_item(self):
         self.cycle([item(1)])
         self.cycle([item(2), item(1)])

@@ -132,6 +132,7 @@ class Plan:
     status_new: list = field(default_factory=list)
     kv_new: list = field(default_factory=list)
     page_new: list = field(default_factory=list)
+    blocked_new: list = field(default_factory=list)
     src_counts: dict = field(default_factory=dict)
     dst_counts: dict = field(default_factory=dict)
 
@@ -139,7 +140,8 @@ class Plan:
     def changes(self) -> int:
         """合并会改动多少东西；0 就是旧数据都已经在这里了。"""
         return sum(len(x) for x in (self.new_watches, self.new_channels, self.seen_new, self.seen_update,
-                                    self.baseline_new, self.feed_new, self.status_new, self.kv_new, self.page_new))
+                                    self.baseline_new, self.feed_new, self.status_new, self.kv_new, self.page_new,
+                                    self.blocked_new))
 
 
 def plan(src_cfg: dict, src: sqlite3.Connection | None, dst_cfg: dict, dst: sqlite3.Connection | None) -> Plan:
@@ -191,7 +193,7 @@ def plan(src_cfg: dict, src: sqlite3.Connection | None, dst_cfg: dict, dst: sqli
 
     if src is None:
         return pl
-    tables = ("seen", "baseline", "feed", "status", "kv", "page")
+    tables = ("seen", "baseline", "feed", "status", "kv", "page", "blocked")
     s = {t: _rows(src, t) for t in tables}
     d = {t: (_rows(dst, t) if dst is not None else []) for t in tables}
     pl.src_counts = {t: len(v) for t, v in s.items()}
@@ -252,6 +254,9 @@ def plan(src_cfg: dict, src: sqlite3.Connection | None, dst_cfg: dict, dst: sqli
     pl.kv_new = [r for r in s["kv"] if r["key"] not in dst_kv]
     dst_pages = {r["id"] for r in d["page"]}
     pl.page_new = [r for r in s["page"] if r["id"] not in dst_pages]
+    dst_blocked = {(r["source"], r["item_id"]) for r in d["blocked"]}
+    pl.blocked_new = [{**r, "watch_id": wid(r["watch_id"])} for r in s["blocked"]
+                      if (r["source"], r["item_id"]) not in dst_blocked]
     return pl
 
 
@@ -302,6 +307,7 @@ def write(pl: Plan, src_cfg: dict, data_dir: Path, store: Store | None = None,
         _insert(con, "status", pl.status_new)
         _insert(con, "kv", pl.kv_new)
         _insert(con, "page", pl.page_new)
+        _insert(con, "blocked", pl.blocked_new)
         if pl.feed_new:
             # 新旧记录混在一起按时间重排，上新页按 ID 倒序显示，顺序才对
             cols = ", ".join(FEED_COLS)
@@ -391,9 +397,9 @@ def report(pl: Plan, src_name: str, applied: bool, backup: Path | None = None, c
     for src, n in pl.seen_skipped.items():
         name = SOURCES[src].name if src in SOURCES else src
         out.append(f"  {name} 的 {n} 件没并：旧版那时的解析有问题，价格不可信，并进来会报假降价（推送记录照样并了）")
-    if pl.baseline_new or pl.status_new or pl.kv_new or pl.page_new:
+    if pl.baseline_new or pl.status_new or pl.kv_new or pl.page_new or pl.blocked_new:
         out.append(f"  另外：基线 {len(pl.baseline_new)} 条、扫描状态 {len(pl.status_new)} 条、"
-                   f"其他记录 {len(pl.kv_new)} 条、推送页 {len(pl.page_new)} 页")
+                   f"其他记录 {len(pl.kv_new)} 条、推送页 {len(pl.page_new)} 页、屏蔽的商品 {len(pl.blocked_new)} 件")
     if pl.src_counts:
         out.append(f"  旧数据（连 WAL 一起）：推送记录 {pl.src_counts['feed']} 条，见过的商品 {pl.src_counts['seen']} 件")
     if not applied and not pl.changes:

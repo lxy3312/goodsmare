@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import copy
 import hmac
 import http.cookies
 import json
@@ -20,8 +21,8 @@ from pathlib import Path
 from . import APP_NAME, __version__, access, migrate, net, notify, pages, qr
 from .access import LOOPBACK
 from .config import ALL_SOURCES, ConfigStore, normalize_channel, normalize_watch
-from .monitor import Monitor, passes, query_of
-from .sources import SOURCES
+from .monitor import Monitor, norm, passes, query_of
+from .sources import SOURCES, Item
 from .store import Store
 
 STATIC = Path(__file__).parent / "static"
@@ -56,6 +57,7 @@ class App:
                         "next_cycle_at": int(m.next_cycle_at), "now": int(time.time())},
             "rate": m.rate(cfg, fetch=False),
             "logs": list(m.logs)[-60:],
+            "blocked": self.store.blocked_count(),
             "access": self.access_state(cfg),
         }
 
@@ -209,6 +211,64 @@ class App:
         self.monitor.trigger()
         return {}
 
+    def block(self, body: dict) -> dict:
+        """在上新里屏蔽商品，顺便给关注加必含词、排除词。
+
+        body：items [{source, item_id, watch_id}]；watches {关注 ID: {must_add: [...], exclude_add: [...]}}；
+        hide_failing 为真时，上新里这些关注下其他不符合新条件的记录也一起屏蔽。
+        返回撤销要用的东西：屏蔽了哪些商品、改之前的关注。
+        """
+        items = [(str(i.get("source") or ""), str(i.get("item_id") or ""), str(i.get("watch_id") or ""))
+                 for i in body.get("items") or [] if isinstance(i, dict)]
+        items = [i for i in items if i[0] and i[1]]
+        changes = body.get("watches") or {}
+        if not isinstance(changes, dict):
+            raise ValueError("请求格式不对")
+        before, after = [], []
+
+        def fn(cfg):
+            for w in cfg["watches"]:
+                ch = changes.get(w["id"])
+                if not isinstance(ch, dict):
+                    continue
+                must = _merge_words(w["must"], ch.get("must_add"))
+                exclude = _merge_words(w["exclude"], ch.get("exclude_add"))
+                if must != w["must"] or exclude != w["exclude"]:
+                    before.append(copy.deepcopy(w))
+                    w["must"], w["exclude"] = must, exclude
+                    after.append(copy.deepcopy(w))
+        if changes:
+            self.cfgstore.update(fn)
+        if body.get("hide_failing"):
+            ids = {w["id"]: w for w in after}
+            have = {(s, i) for s, i, _ in items}
+            for wid, w in ids.items():
+                for r in self.store.feed(watch_id=wid, limit=500):
+                    it = Item(source=r["source"], id=r["item_id"], title=r["title"], price=None, url="")
+                    if (r["source"], r["item_id"]) not in have and not passes(w, it):
+                        have.add((r["source"], r["item_id"]))
+                        items.append((r["source"], r["item_id"], wid))
+        n = self.store.block(items)
+        return {"blocked": n, "watches": [w["name"] for w in after], "undo": {
+            "items": [{"source": s, "item_id": i} for s, i, _ in items], "watches": before}}
+
+    def unblock(self, body: dict) -> dict:
+        """撤销刚才的屏蔽：放回商品，关注改回原样。"""
+        self.store.unblock([(str(i.get("source")), str(i.get("item_id")))
+                            for i in body.get("items") or [] if isinstance(i, dict)])
+        olds = {w.get("id"): w for w in body.get("watches") or [] if isinstance(w, dict)}
+        if olds:
+            def fn(cfg):
+                for k, w in enumerate(cfg["watches"]):
+                    if w["id"] in olds:
+                        cfg["watches"][k] = normalize_watch(olds[w["id"]])
+            self.cfgstore.update(fn)
+        return {}
+
+    def clear_blocked(self, body: dict) -> dict:
+        self.store.clear_blocked()
+        return {}
+
     def clear_feed(self, body: dict) -> dict:
         self.store.clear_feed()
         return {}
@@ -221,7 +281,20 @@ POSTS = {
     "/api/channel/test": "test_channel",
     "/api/preview": "preview", "/api/scan": "scan", "/api/feed/clear": "clear_feed",
     "/api/access": "save_access", "/api/migrate": "migrate",
+    "/api/block": "block", "/api/unblock": "unblock", "/api/blocked/clear": "clear_blocked",
 }
+
+
+def _merge_words(old: list, add) -> list:
+    """把新词并进必含词 / 排除词：去掉空的、太长的、已经有的（全半角大小写不同也算有）。"""
+    out = list(old)
+    have = {norm(w) for w in out}
+    for w in add if isinstance(add, list) else []:
+        w = str(w).strip()
+        if w and len(w) <= 60 and norm(w) not in have:
+            have.add(norm(w))
+            out.append(w)
+    return out
 
 
 def _int(v) -> int:

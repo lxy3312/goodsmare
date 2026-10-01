@@ -205,6 +205,31 @@ main { max-width: 1280px; margin: 0 auto; padding: 24px 24px 72px; }
 .meta .tag { display: inline-flex; align-items: center; gap: 4px; max-width: 58%; padding: 1px 8px; border-radius: 7px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meta .ex { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .card.fresh { animation: pop .5s var(--ease) backwards, glow 8s ease-out; }
+/* 卡片外面包一层 .cell：屏蔽 / 选中的小圆按钮放在图片右下角 */
+.cell { position: relative; display: flex; min-width: 0; }
+.cell > .card { flex: 1; min-width: 0; }
+.cell .over { position: absolute; left: 1px; right: 1px; top: 1px; aspect-ratio: 1; pointer-events: none; z-index: 3; }
+.pick { position: absolute; right: 9px; bottom: 9px; width: 32px; height: 32px; padding: 0; border-radius: 50%; pointer-events: auto;
+  background: rgba(28, 16, 22, .55); border: 1.5px solid rgba(255, 255, 255, .75); color: #fff;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); opacity: 0; transform: scale(.88); transition: opacity .15s, transform .15s, background .15s; }
+.pick .i { width: 17px; height: 17px; stroke-width: 2.2; }
+.pick .b2 { display: none; }
+.pick:hover { background: rgba(194, 53, 46, .92); border-color: transparent; }
+@media (hover: hover) { .cell:hover .pick, .pick:focus-visible { opacity: 1; transform: none; } }
+@media (hover: none) { body:not(.selecting) .pick { display: none; } }
+body.selecting .card { cursor: pointer; }
+body.selecting .pick { opacity: 1; transform: none; background: rgba(28, 16, 22, .3); }
+body.selecting .pick .b1 { display: none; }
+body.selecting .cell.sel .pick { background: var(--accent); border-color: #fff; }
+body.selecting .cell.sel .pick .b2 { display: block; }
+body.selecting .cell.sel .card { border-color: transparent; box-shadow: 0 0 0 2.5px var(--accent), var(--shadow); }
+.cell.gone { animation: gone .26s var(--ease) forwards; }
+@keyframes gone { to { opacity: 0; transform: scale(.94); } }
+#selectBtn.on { background: var(--accent-soft); color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+.selbar { position: fixed; left: 50%; bottom: 24px; z-index: 25; transform: translateX(-50%); display: flex; align-items: center; gap: 8px;
+  width: min(560px, calc(100vw - 32px)); padding: 10px 10px 10px 18px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-lg); }
+.selbar .selcount { min-width: 0; font-weight: 650; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes pop { from { opacity: 0; transform: translateY(12px) scale(.97); } }
 @keyframes glow { 0%, 40% { box-shadow: 0 0 0 2px var(--accent), 0 12px 32px var(--accent-ring); } 100% { box-shadow: var(--shadow-sm); } }
 .skel .thumb, .skel .l { background: linear-gradient(100deg, var(--panel-3) 30%, var(--panel-2) 50%, var(--panel-3) 70%); background-size: 220% 100%; animation: shimmer 1.5s linear infinite; }
@@ -364,6 +389,29 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 #toast.bad { background: #c2352e; color: #fff; }
 #toast .i { width: 18px; height: 18px; }
+#toast.act { pointer-events: auto; }
+#toast .t-act { height: 28px; margin-left: 6px; padding: 0 12px; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--bg) 22%, transparent);
+  color: inherit; font-size: 13px; font-weight: 700; }
+#toast .t-act:hover { background: color-mix(in srgb, var(--bg) 34%, transparent); }
+/* —— 屏蔽弹窗 —— */
+.bgroup { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel-2); }
+.bg-head { display: flex; align-items: center; gap: 8px; }
+.bg-head b { font-size: 15px; font-weight: 700; }
+.bg-head .i { color: var(--accent-ink); width: 17px; height: 17px; }
+.btitles { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 196px; overflow: auto; }
+.btitles li { display: flex; align-items: center; gap: 10px; font: 13px/1.5 var(--font-ja); }
+.btitles img, .btitles .noimg-s { width: 40px; height: 40px; flex: none; border-radius: 8px; object-fit: cover; background: var(--panel-3); }
+.btitles span { overflow-wrap: anywhere; }
+.bgroup .chips { gap: 6px; }
+.bgroup .chip { font-family: var(--font-ja); }
+.bgroup .chip em { font-style: normal; margin-left: 5px; font-size: 11px; color: var(--muted); }
+.bgroup .chip.on em { color: inherit; opacity: .75; }
+.bgroup .custom-url { margin-top: 10px; }
+.addSel { max-width: 46%; overflow: hidden; text-overflow: ellipsis; }
+.bg-affect { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  color: color-mix(in srgb, var(--warn) 82%, var(--ink)); font-size: 12.5px; line-height: 1.65; }
+.bg-affect ul { margin: 4px 0 0; padding-left: 18px; font-family: var(--font-ja); }
+body.selecting main { padding-bottom: 140px; }
 
 /* —— 窄屏 —— */
 @media (max-width: 1080px) {
@@ -376,6 +424,8 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
   .settings-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
+  .selbar { bottom: calc(92px + env(safe-area-inset-bottom)); }
+  body.selecting main { padding-bottom: 200px; }
   .bar { padding: 9px 16px; min-height: 60px; gap: 10px; }
   main { padding: 18px 16px 120px; }
   /* 页签挪到屏幕底部，做成悬浮的一条 */
@@ -423,6 +473,8 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
   .preview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 420px) {
+  #selectBtn .lbl { display: none; }
+  #selectBtn { width: 36px; padding: 0; }
   .status .mid { display: none; }
   .status { padding: 0 11px 0 10px; }
   .toolbar select { max-width: 140px; }
@@ -462,6 +514,8 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
   <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.5 12h17M12 3c2.6 2.4 3.9 5.4 3.9 9s-1.3 6.6-3.9 9c-2.6-2.4-3.9-5.4-3.9-9S9.4 5.4 12 3z"/></symbol>
   <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.8" width="11" height="18.4" rx="2.6"/><path d="M10.6 17.8h2.8"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></symbol>
+  <symbol id="i-select" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="M8 12.2l2.8 2.8 5.2-5.6"/></symbol>
   <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 8.5l3 4 3-4M8.8 13h6.4M8.8 15.6h6.4M12 12.5V17"/></symbol>
 </svg>
 
@@ -489,9 +543,16 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
     <div class="toolbar">
       <div class="chips" id="feedChips"></div>
       <div class="spacer"></div>
+      <button id="selectBtn" type="button" title="选中和关键词不相干的商品，屏蔽掉" aria-label="选择要屏蔽的商品"><svg class="i" aria-hidden="true"><use href="#i-select"/></svg><span class="lbl">选择</span></button>
       <select id="feedSource" aria-label="按网站筛选"></select>
     </div>
     <div class="grid" id="feed"></div>
+    <div class="selbar" id="selbar" hidden>
+      <span class="selcount" id="selCount"></span>
+      <div class="spacer"></div>
+      <button class="ghost sm" id="selCancel" type="button">取消</button>
+      <button class="primary sm" id="selBlock" type="button" disabled><svg class="i" aria-hidden="true"><use href="#i-ban"/></svg>屏蔽…</button>
+    </div>
     <div class="empty" id="feedEmpty" hidden></div>
     <button class="more" id="moreBtn" hidden>加载更多</button>
   </section>
@@ -594,6 +655,7 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
     <h3 class="sec-h">其他</h3>
     <div class="panel misc">
       <button class="danger" id="clearFeed"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>清空上新记录</button>
+      <button id="unblockAll" hidden><svg class="i" aria-hidden="true"><use href="#i-eye"/></svg>恢复屏蔽的 <span id="blockedN"></span> 件商品</button>
       <span class="hint" id="version"></span>
     </div>
   </section>
@@ -663,6 +725,23 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
   </form>
 </dialog>
 
+<dialog id="blockDlg" aria-labelledby="blockDlgTitle">
+  <form method="dialog" id="blockForm">
+    <div class="dlg-head">
+      <span class="dlg-icon"><svg class="i" aria-hidden="true"><use href="#i-ban"/></svg></span>
+      <div><b id="blockDlgTitle">屏蔽</b><small>屏蔽的商品不再出现在上新里，以后也不会推送</small></div>
+      <div class="spacer"></div>
+      <button type="button" class="ghost icon" data-close aria-label="关闭"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="dlg-body" id="blockBody"></div>
+    <div class="dlg-foot">
+      <div class="spacer"></div>
+      <button type="button" data-close>取消</button>
+      <button class="primary" value="save" id="blockGo"><svg class="i" aria-hidden="true"><use href="#i-ban"/></svg>屏蔽</button>
+    </div>
+  </form>
+</dialog>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -722,11 +801,12 @@ async function copyText(text) {
   ta.remove(); return ok;
 }
 
-function toast(msg, bad) {
+function toast(msg, bad, action) {
   const t = $("#toast");
-  t.innerHTML = ico(bad ? "alert" : "check-circle") + `<span>${esc(msg)}</span>`;
-  t.className = "show" + (bad ? " bad" : "");
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.className = "", bad ? 5000 : 2500);
+  t.innerHTML = ico(bad ? "alert" : "check-circle") + `<span>${esc(msg)}</span>` + (action ? `<button type="button" class="t-act">${esc(action.label)}</button>` : "");
+  t.className = "show" + (bad ? " bad" : "") + (action ? " act" : "");
+  if (action) t.querySelector(".t-act").onclick = () => { t.className = ""; action.run(); };
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.className = "", action ? 9000 : bad ? 5000 : 2500);
 }
 
 const srcName = k => (S?.sources.find(s => s.key === k) || {}).name || k;
@@ -795,6 +875,138 @@ function cardHTML(it, opts = {}) {
     </div></a>`;
 }
 
+// —— 屏蔽：选中和关键词不相干的商品，顺便挑几个词加进排除词 ——
+let selecting = false, blockItems = [];
+const picked = new Map();   // 选中的商品
+const loaded = new Map();   // 上新里加载过的商品，点卡片时按键查
+const ikey = it => `${it.source}|${it.item_id}`;
+
+function cellHTML(it, opts = {}) {
+  loaded.set(ikey(it), it);
+  return `<div class="cell${picked.has(ikey(it)) ? " sel" : ""}" data-key="${esc(ikey(it))}">${cardHTML(it, opts)}
+    <div class="over"><button class="pick" type="button" title="屏蔽这件" aria-label="屏蔽或选中这件">${ico("ban", "b1")}${ico("check", "b2")}</button></div></div>`;
+}
+
+function setSelecting(on) {
+  selecting = on;
+  document.body.classList.toggle("selecting", on);
+  if (!on) { picked.clear(); $$("#feed .cell.sel").forEach(c => c.classList.remove("sel")); }
+  $("#selectBtn").classList.toggle("on", on);
+  $("#selbar").hidden = !on;
+  updateSelbar();
+}
+function updateSelbar() {
+  const n = picked.size;
+  $("#selCount").textContent = n ? `已选 ${n} 件` : "点卡片，选中和关键词不相干的";
+  $("#selBlock").disabled = !n;
+}
+
+// 全角半角、大小写统一，和后端的 norm 一样；"A|B" 是任一个
+const nrm = s => String(s ?? "").normalize("NFKC").toLowerCase();
+const alts = w => nrm(w).split(/[|｜]/).map(x => x.trim()).filter(Boolean);
+const NOISE = new Set(["中古", "美品", "新品", "未使用", "未開封", "送料無料", "匿名配送", "即購入ok", "即購入可", "セット",
+  "まとめ", "限定", "希少", "レア", "the", "and", "for", "with", "of", "an"]);
+const strong = w => w.length >= 3 || /[^\x00-\x7f]/.test(w);
+
+// 从标题里拆出可以拿来排除的词：先按空格、括号、标点切，再把拉丁字母、片假名、汉字、韩文各自连成一段；平假名多半是助词，不要
+function titleWords(title) {
+  const out = [];
+  for (const chunk of String(title).normalize("NFKC").split(/[\s【】\[\]()（）「」『』《》〈〉<>{}・･,，、。.!！?？|｜~〜:：;；"'“”‘’\/\\+=*#@&%^$¥￥★☆◆◇■□●○※♪]+/u)) {
+    for (const t of chunk.match(/[\p{Script=Latin}\d][\p{Script=Latin}\d\-_.']*|[\p{Script=Katakana}ー]+|\p{Script=Han}+|\p{Script=Hangul}+/gu) || []) {
+      const w = t.replace(/^[-_.']+|[-_.']+$/g, "");
+      if (w.length >= 2 && !/^\d+$/.test(w)) out.push(w);
+    }
+  }
+  return out;
+}
+
+function blockGroups(items) {
+  const by = new Map();
+  for (const it of items) { if (!by.has(it.watch_id)) by.set(it.watch_id, []); by.get(it.watch_id).push(it); }
+  return [...by].map(([wid, list]) => {
+    const w = S.config.watches.find(x => x.id === wid);
+    if (!w) return { wid, w, list, must: [], cands: [] };
+    const titles = list.map(it => nrm(it.title));
+    const kw = nrm(w.keyword).split(/\s+/).filter(t => t.length >= 2 && !NOISE.has(t));
+    // 关键词里的哪个词，选中的这几件标题里没有：建议设成必含词，这类东西一下都拦住
+    const must = kw.filter(t => !w.must.some(m => alts(m).includes(t)))
+      .map(t => ({ word: t, missing: titles.filter(ti => !ti.includes(t)).length })).filter(x => x.missing > 0);
+    // 排除词候选：关键词、必含词本身和它们的一部分不能排除，不然真货也被挡掉
+    const guard = [...kw, ...w.must.flatMap(alts)];
+    const count = new Map();
+    for (const it of list) for (const t of new Set(titleWords(it.title))) {
+      const k = nrm(t);
+      if (NOISE.has(k) || guard.some(g => g.includes(k) || k.includes(g)) || w.exclude.some(e => alts(e).includes(k))) continue;
+      const c = count.get(k) || { word: t, n: 0, first: count.size };
+      c.n++; count.set(k, c);
+    }
+    const cands = [...count.values()].sort((a, b) => b.n - a.n || a.first - b.first).slice(0, 30);
+    return { wid, w, list, must, cands };
+  });
+}
+
+function blockGroupHTML(g) {
+  const n = g.list.length;
+  const head = `<div class="bg-head">${ico("tag")}<b>${esc(g.w ? g.w.name : "已经删掉的关注")}</b><span class="hint">${n} 件</span></div>`;
+  const titles = `<ul class="btitles">${g.list.map(it => `<li>${it.image ? `<img src="${esc(it.image)}" alt="" loading="lazy">` : `<i class="noimg-s"></i>`}<span lang="ja">${esc(it.title)}</span></li>`).join("")}</ul>`;
+  if (!g.w) return `<section class="bgroup">${head}${titles}<p class="hint" style="margin:0">这个关注已经删了，只屏蔽这几件。</p></section>`;
+  const q = list => list.map(m => `「${esc(m.word)}」`).join("和");
+  const all = g.must.filter(m => m.missing === n), some = g.must.filter(m => m.missing < n);
+  const why = [all.length ? (n === 1 ? `这件的标题里没有${q(all)}` : `这 ${n} 件的标题里都没有${q(all)}`) : "",
+    ...some.map(m => `有 ${m.missing} 件的标题里没有「${esc(m.word)}」`)].filter(Boolean).join("；");
+  const must = g.must.length ? `<div class="field"><span>标题必须包含</span>
+      <div class="chips" data-kind="must">${g.must.map(m => { const on = m.missing === n && strong(m.word);
+        return `<button type="button" class="chip${on ? " on" : ""}" aria-pressed="${on}" data-word="${esc(m.word)}">${esc(m.word)}</button>`; }).join("")}</div>
+      <small>${why}。选上以后，标题里没有它的都不再推送；同一个东西有几种写法的，之后可以在关注里改成 A|B。</small></div>` : "";
+  const ex = `<div class="field"><span>标题里出现这些词就不推送</span>
+      ${g.cands.length ? `<div class="chips" data-kind="ex">${g.cands.map(c => `<button type="button" class="chip" aria-pressed="false" data-word="${esc(c.word)}">${esc(c.word)}${c.n > 1 ? `<em>${c.n}</em>` : ""}</button>`).join("")}</div>` : ""}
+      <div class="custom-url"><input type="text" class="exInput" placeholder="自己填，多个用逗号隔开" autocomplete="off" aria-label="自己填的排除词"><button type="button" class="addSel" hidden></button></div>
+      <small>点选上面的词，或者在标题里划选一段文字加进来。${g.w.exclude.length ? `现在已经排除：${esc(words(g.w.exclude))}` : ""}</small></div>`;
+  return `<section class="bgroup" data-watch="${esc(g.wid)}">${head}${titles}${must}${ex}<div class="bg-affect" hidden></div></section>`;
+}
+
+// 只看标题：和后端 passes 里必含词、排除词那部分一样
+function passesTitle(title, must, exclude) {
+  const t = nrm(title);
+  const has = w => { const a = alts(w); return !a.length || a.some(x => t.includes(x)); };
+  return must.every(has) && !exclude.some(w => alts(w).length && has(w));
+}
+
+// 选的词会顺带挡住上新里哪些没选的：边点边显示，免得把真货也排除了
+function updateAffect() {
+  const chosen = new Set(blockItems.map(ikey)), hide = !!$("#hideFailing")?.checked;
+  for (const sec of $$("#blockBody .bgroup[data-watch]")) {
+    const w = S.config.watches.find(x => x.id === sec.dataset.watch), box = $(".bg-affect", sec);
+    if (!w || !box) continue;
+    const on = kind => $$(`[data-kind="${kind}"] .chip.on`, sec).map(b => b.dataset.word);
+    const typed = ($(".exInput", sec)?.value || "").split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+    const addM = on("must"), addE = [...on("ex"), ...typed];
+    const hit = !addM.length && !addE.length ? [] : [...loaded.values()].filter(it => it.watch_id === w.id && !chosen.has(ikey(it))
+      && !passesTitle(it.title, [...w.must, ...addM], [...w.exclude, ...addE]));   // 和后端「顺带藏起来」挑的是同一批
+    box.hidden = !hit.length;
+    if (!hit.length) { box.innerHTML = ""; continue; }
+    box.innerHTML = `照这样设置，上新里另外还有 ${hit.length} 件也不符合了${hide ? "，会一起藏起来" : ""}；要是里面有想要的，少选几个词：
+      <ul>${hit.slice(0, 5).map(it => `<li>${esc(it.title)}</li>`).join("")}${hit.length > 5 ? `<li>等 ${hit.length} 件</li>` : ""}</ul>`;
+  }
+}
+
+function openBlock(items) {
+  blockItems = items;
+  const groups = blockGroups(items);
+  $("#blockDlgTitle").textContent = `屏蔽 ${items.length} 件`;
+  $("#blockBody").innerHTML = groups.map(blockGroupHTML).join("") + (groups.some(g => g.w) ? `<div class="switches"><label class="row-switch">
+    <span>上新里其他不符合新条件的也一起藏起来<small>按上面选的必含词、排除词，检查这些关注在上新里的其他记录</small></span>
+    <span class="switch"><input type="checkbox" id="hideFailing" checked><span></span></span></label></div>` : "");
+  $("#blockDlg").showModal();
+  updateAffect();
+}
+
+function dropCells(list) {
+  const keys = new Set(list.map(i => `${i.source}|${i.item_id}`));
+  keys.forEach(k => loaded.delete(k));
+  $$("#feed .cell").forEach(c => { if (keys.has(c.dataset.key)) { c.classList.add("gone"); setTimeout(() => { c.remove(); renderFeedEmpty(); }, 260); } });
+}
+
 function skeletons(n = 12) {
   return `<div class="card skel" aria-hidden="true"><div class="thumb"></div><div class="body"><div class="l w1"></div><div class="l w2"></div><div class="l w3"></div></div></div>`.repeat(n);
 }
@@ -823,7 +1035,7 @@ async function loadFeed(reset) {
   if (!reset && feedMin) q.set("before", feedMin);
   const { items } = await api("/api/feed?" + q);
   if (reset) { box.innerHTML = ""; feedMax = 0; feedMin = 0; }
-  box.insertAdjacentHTML("beforeend", items.map(it => cardHTML(it)).join(""));
+  box.insertAdjacentHTML("beforeend", items.map(it => cellHTML(it)).join(""));
   settleImages(box);
   if (items.length) {
     feedMax = Math.max(feedMax, items[0].id);
@@ -864,7 +1076,7 @@ async function pollFeed() {
   if (!items.length || items[0].id <= feedMax) return;
   feedMax = items[0].id;
   if (!feedMin) feedMin = items[items.length - 1].id;
-  $("#feed").insertAdjacentHTML("afterbegin", items.map(it => cardHTML(it, { fresh: true })).join(""));
+  $("#feed").insertAdjacentHTML("afterbegin", items.map(it => cellHTML(it, { fresh: true })).join(""));
   settleImages($("#feed"));
   renderFeedEmpty();
   announce(items);
@@ -1100,6 +1312,7 @@ function renderSettings() {
   const html = S.logs.length ? S.logs.map(logLine).join("") : `<div class="none">还没有日志。</div>`;
   if (logs._h !== html) { setHTML(logs, html); if (atBottom) logs.scrollTop = logs.scrollHeight; }
   $("#version").textContent = `${S.app} v${S.version}`;
+  $("#unblockAll").hidden = !S.blocked; $("#blockedN").textContent = S.blocked || 0;
   renderPhone();
 }
 
@@ -1159,6 +1372,7 @@ function showTab(name) {
     if (on) { void s.offsetWidth; s.classList.add("enter"); }
   });
   if (name === "feed") { unseen = 0; $("#newCount").hidden = true; document.title = "goodsmare"; }
+  else if (selecting) setSelecting(false);
   store.set("tab", name);
 }
 $("#tabs").addEventListener("click", e => {
@@ -1187,6 +1401,81 @@ $("#feedChips").addEventListener("click", e => {
   feedFilter.watch = b.dataset.watch; renderFeedFilters(); loadFeed(true);
 });
 $("#feedSource").onchange = e => { feedFilter.source = e.target.value; loadFeed(true); };
+
+$("#selectBtn").onclick = () => setSelecting(!selecting);
+$("#selCancel").onclick = () => setSelecting(false);
+$("#selBlock").onclick = () => { if (picked.size) openBlock([...picked.values()]); };
+$("#feed").addEventListener("click", e => {
+  const cell = e.target.closest(".cell"); if (!cell) return;
+  const pick = e.target.closest(".pick");
+  if (!selecting && !pick) return;   // 平时点卡片照常打开商品页
+  e.preventDefault();
+  const it = loaded.get(cell.dataset.key); if (!it) return;
+  if (!selecting) { openBlock([it]); return; }   // 没在选择时点那个小圆钮：直接屏蔽这一件
+  if (picked.has(cell.dataset.key)) picked.delete(cell.dataset.key); else picked.set(cell.dataset.key, it);
+  cell.classList.toggle("sel", picked.has(cell.dataset.key));
+  updateSelbar();
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && selecting && !document.querySelector("dialog[open]")) setSelecting(false);
+});
+$("#blockBody").addEventListener("click", e => {
+  const chip = e.target.closest(".chip[data-word]");
+  if (chip) { chip.classList.toggle("on"); chip.setAttribute("aria-pressed", chip.classList.contains("on")); updateAffect(); return; }
+  const add = e.target.closest(".addSel");
+  if (add) {   // 把划选的文字变成一个选中的词
+    const sec = add.closest(".bgroup");
+    let box = $('[data-kind="ex"]', sec);
+    if (!box) { $(".custom-url", sec).insertAdjacentHTML("beforebegin", `<div class="chips" data-kind="ex"></div>`); box = $('[data-kind="ex"]', sec); }
+    const w = add.dataset.word;
+    const same = $$(".chip", box).find(c => nrm(c.dataset.word) === nrm(w));
+    if (same) { same.classList.add("on"); same.setAttribute("aria-pressed", "true"); }   // 候选里本来就有：直接选上
+    else box.insertAdjacentHTML("afterbegin", `<button type="button" class="chip on" aria-pressed="true" data-word="${esc(w)}">${esc(w)}</button>`);
+    add.hidden = true;
+    updateAffect();
+  }
+});
+$("#blockBody").addEventListener("input", updateAffect);
+$("#blockBody").addEventListener("change", updateAffect);
+// 在弹窗的标题里划选文字：那一组旁边出现「加上「…」」
+document.addEventListener("selectionchange", () => {
+  if (!$("#blockDlg").open) return;
+  const sel = getSelection(), text = sel.toString().trim();
+  if (!text || text.length > 30 || /\n/.test(text)) return;
+  const node = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+  const list = node && node.closest(".btitles"); if (!list) return;
+  $$("#blockBody .addSel").forEach(b => b.hidden = true);
+  const b = $(".addSel", list.closest(".bgroup"));
+  if (b) { b.hidden = false; b.dataset.word = text; b.textContent = `加上「${text}」`; }
+});
+$("#blockForm").addEventListener("submit", async e => {
+  if (e.submitter?.value !== "save") return;
+  e.preventDefault();
+  const watches = {};
+  for (const sec of $$("#blockBody .bgroup[data-watch]")) {
+    const on = kind => $$(`[data-kind="${kind}"] .chip.on`, sec).map(b => b.dataset.word);
+    const typed = ($(".exInput", sec)?.value || "").split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+    const must_add = on("must"), exclude_add = [...on("ex"), ...typed];
+    if (must_add.length || exclude_add.length) watches[sec.dataset.watch] = { must_add, exclude_add };
+  }
+  const items = blockItems.map(it => ({ source: it.source, item_id: it.item_id, watch_id: it.watch_id }));
+  const b = $("#blockGo"); b.disabled = true;
+  try {
+    const d = await api("/api/block", { items, watches, hide_failing: !!$("#hideFailing")?.checked && Object.keys(watches).length > 0 });
+    $("#blockDlg").close(); setSelecting(false);
+    dropCells(d.undo.items);
+    const changed = d.watches.length ? `，「${d.watches.join("」「")}」的条件也改了` : "";
+    toast(`屏蔽了 ${d.undo.items.length} 件${changed}`, false, { label: "撤销", run: async () => {
+      try { await api("/api/unblock", d.undo); await refresh(); loadFeed(true); toast("撤销了"); } catch (err) { toast(err.message, true); }
+    } });
+    refresh();
+  } catch (err) { toast(err.message, true); }
+  finally { b.disabled = false; }
+});
+$("#unblockAll").onclick = async () => {
+  if (!confirm(`把屏蔽的 ${S.blocked} 件商品都放回上新里？（关注的必含词、排除词不会改回去）`)) return;
+  try { await api("/api/blocked/clear", {}); await refresh(); loadFeed(true); toast("都放回来了"); } catch (e) { toast(e.message, true); }
+};
 $("#moreBtn").onclick = () => loadFeed(false);
 
 $("#addWatch").onclick = () => openWatch(null);
