@@ -10,12 +10,13 @@
 from __future__ import annotations
 
 import argparse
+import socket
 import sys
 import time
 import webbrowser
 from pathlib import Path
 
-from . import APP_NAME, __version__, net, notify
+from . import APP_NAME, __version__, access, net, notify
 from .config import ALL_SOURCES, ConfigStore, normalize_watch
 from .monitor import Monitor, passes, query_of
 from .sources import SOURCES
@@ -57,6 +58,15 @@ def _source(name: str) -> str:
     return key
 
 
+def _port_busy(port: int) -> bool:
+    """Windows 上两个程序能同时监听同一个端口（比如旧版还开着），请求会随机落到其中一个。先敲一下门。"""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
 def cmd_run(args):
     cfgstore, store = _stores(args)
     cfg = cfgstore.load()
@@ -66,26 +76,35 @@ def cmd_run(args):
     port = args.port or cfg["web"]["port"]
     if args.host or args.port:
         cfgstore.update(lambda c: c["web"].update({"host": host, "port": port}))
-    if host not in ("127.0.0.1", "localhost", "::1") and not cfg["web"].get("token"):
-        print("⚠ 网页对局域网开放了但没设口令：任何能连上的人都能改你的配置。"
-              "建议在 data/config.json 的 web.token 里设一个。")
+    if not access.is_loopback(host) and not cfg["web"]["token"]:
+        cfgstore.update(lambda c: c["web"].update({"token": access.new_token()}))
+        print("网页对局域网开放了，已经自动设了一个口令（在 data/config.json 的 web.token 里）。")
+    cfg = cfgstore.load()
+    token = cfg["web"]["token"]
+    if _port_busy(port):
+        sys.exit(f"端口 {port} 已经有程序在用了：是不是之前开的 {APP_NAME}（或者旧版）还没关？"
+                 f"关掉它再开，或者换个端口：python -m goodsmare --port {port + 1}")
 
-    from .web import App, serve
-    shown = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    from .web import App, WebServer
+    shown = "127.0.0.1" if host in access.ANY or access.is_loopback(host) else host
     url = f"http://{shown}:{port}/"
-    monitor = Monitor(cfgstore, store, web_url=url if shown not in ("127.0.0.1", "localhost") else "")
+    monitor = Monitor(cfgstore, store, serving=True)
     try:
-        server = serve(App(cfgstore, store, monitor), host, port)
+        server = WebServer(App(cfgstore, store, monitor), host, port)
     except OSError as e:
-        sys.exit(f"端口 {port} 用不了（{e}）。换一个：python -m goodsmare --port 8788")
+        sys.exit(f"端口 {port} 用不了（{e}）。换一个：python -m goodsmare --port {port + 1}")
 
     print(f"{APP_NAME} v{__version__} 已启动")
     print(f"  网页：{url}")
+    phone = access.phone_base(cfg)
+    if phone:
+        print(f"  手机：{phone}/?token={token}")
     print(f"  数据：{Path(args.data).resolve()}")
     print("  关掉这个窗口（或按 Ctrl+C）就停止监控\n")
     if not args.no_browser:
         try:
-            webbrowser.open(url)
+            # 带着口令打开，浏览器记下 cookie，以后直接进
+            webbrowser.open(url + (f"?token={token}" if token else ""))
         except Exception:
             pass
     try:
@@ -94,7 +113,7 @@ def cmd_run(args):
         print("\n已停止")
     finally:
         monitor.stop()
-        server.shutdown()
+        server.close()
 
 
 def cmd_once(args):
@@ -207,7 +226,8 @@ def main(argv=None):
     r = sub.add_parser("run", help="启动监控和网页（默认）")
     for sp, default in ((p, None), (r, argparse.SUPPRESS)):
         # 子命令里用 SUPPRESS，免得 `--port 1 run` 被子命令的默认值盖掉
-        sp.add_argument("--host", default=default if default else "", help="网页监听地址，手机要看就用 0.0.0.0")
+        sp.add_argument("--host", default=default if default else "",
+                        help="网页监听地址，0.0.0.0 是对局域网开放（网页里「设置 → 手机访问」也能开）")
         sp.add_argument("--port", type=int, default=default if default else 0, help="网页端口，默认 8787")
         sp.add_argument("--no-browser", action="store_true", default=default if default else False,
                         help="启动时不自动打开浏览器")

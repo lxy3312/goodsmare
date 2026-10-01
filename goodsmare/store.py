@@ -1,7 +1,9 @@
-"""SQLite：见过哪些商品、推送过哪些、每个关注在每个站的最近状态。"""
+"""SQLite：见过哪些商品、推送过哪些、每个关注在每个站的最近状态，还有推送页。"""
 
 from __future__ import annotations
 
+import json
+import secrets
 import sqlite3
 import threading
 import time
@@ -29,10 +31,12 @@ CREATE TABLE IF NOT EXISTS status (
     PRIMARY KEY (watch_id, source)
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS page (id TEXT PRIMARY KEY, created INTEGER, data TEXT);
 """
 
 FEED_KEEP = 3000
 SEEN_KEEP_DAYS = 45
+PAGE_KEEP_DAYS = 30
 
 
 class Store:
@@ -163,10 +167,26 @@ class Store:
             self.db.execute("INSERT OR REPLACE INTO kv VALUES (?,?)", (key, value))
             self.db.commit()
 
+    # —— 推送页：一轮推送一页，链接里的随机 ID 就是钥匙 ——
+    def add_page(self, data: dict) -> str:
+        pid = secrets.token_urlsafe(12)
+        with self._lock:
+            self.db.execute("INSERT INTO page VALUES (?,?,?)",
+                            (pid, int(time.time()), json.dumps(data, ensure_ascii=False)))
+            self.db.commit()
+        return pid
+
+    def page(self, pid: str) -> dict | None:
+        with self._lock:
+            row = self.db.execute("SELECT data FROM page WHERE id=?", (pid,)).fetchone()
+        return json.loads(row["data"]) if row else None
+
     def prune(self) -> None:
         with self._lock:
             self.db.execute("DELETE FROM seen WHERE last_seen < ?",
                             (int(time.time()) - SEEN_KEEP_DAYS * 86400,))
+            self.db.execute("DELETE FROM page WHERE created < ?",
+                            (int(time.time()) - PAGE_KEEP_DAYS * 86400,))
             self.db.execute("DELETE FROM feed WHERE id <= (SELECT id FROM feed ORDER BY id DESC "
                             "LIMIT 1 OFFSET ?)", (FEED_KEEP,))
             self.db.commit()

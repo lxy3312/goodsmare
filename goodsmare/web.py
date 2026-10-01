@@ -1,28 +1,36 @@
-"""本地网页：看上新、管关注、配推送。只用标准库 http.server。
+"""本地网页：看上新、管关注、配推送，还有推送页。只用标准库 http.server。
 
-默认只监听 127.0.0.1。想在手机上看就把 host 改成 0.0.0.0，并务必设一个 token。
-防护：检查 Host 头（防 DNS rebinding）；写操作只收 application/json（别的网页没法跨域偷偷提交）。
+默认只监听 127.0.0.1。「设置 → 手机访问」打开后监听 0.0.0.0，同时必须有口令（token）。
+防护：没设口令时只认本机的 Host 头（防 DNS rebinding）；设了口令就全靠口令；
+写操作只收 application/json（别的网页没法跨域偷偷提交）。推送页 /p/<随机 ID> 不要口令，ID 就是钥匙。
 """
 
 from __future__ import annotations
 
+import hmac
 import http.cookies
 import json
-import secrets
+import socketserver
 import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import APP_NAME, __version__, net, notify
+from . import APP_NAME, __version__, access, net, notify, pages, qr
+from .access import LOOPBACK
 from .config import ALL_SOURCES, ConfigStore, normalize_channel, normalize_watch
 from .monitor import Monitor, passes, query_of
 from .sources import SOURCES
 from .store import Store
 
 STATIC = Path(__file__).parent / "static"
-LOOPBACK = {"127.0.0.1", "localhost", "::1", "[::1]"}
+COOKIE = "goodsmare_token"
+
+
+def _same(a: str, b: str) -> bool:
+    # compare_digest 遇到非 ASCII 的 str 会抛异常，统一转成字节再比
+    return hmac.compare_digest((a or "").encode(), (b or "").encode())
 
 
 class App:
@@ -30,6 +38,7 @@ class App:
         self.cfgstore = cfgstore
         self.store = store
         self.monitor = monitor
+        self.server: WebServer | None = None   # WebServer 启动时填上，换监听地址要用
 
     # —— 读 ——
     def state(self) -> dict:
@@ -47,7 +56,14 @@ class App:
                         "next_cycle_at": int(m.next_cycle_at), "now": int(time.time())},
             "rate": m.rate(cfg, fetch=False),
             "logs": list(m.logs)[-60:],
+            "access": self.access_state(cfg),
         }
+
+    def access_state(self, cfg: dict) -> dict:
+        lan = access.lan_on(cfg)
+        return {"lan": lan, "listening": self.server.host if self.server else cfg["web"]["host"],
+                "port": cfg["web"]["port"], "ips": access.lan_ips() if lan else [],
+                "base": access.phone_base(cfg)}
 
     def feed(self, q: dict) -> dict:
         items = self.store.feed(after=_int(q.get("after")), before=_int(q.get("before")),
@@ -126,8 +142,36 @@ class App:
             raise ValueError("找不到这个推送渠道")
         net.set_proxy(cfg["proxy"])
         hits, where = self.monitor.test_hits(cfg)
-        notify.send(ch, hits, self.monitor.ctx(cfg))
-        return {"message": f"已发送（{where}），去看看收到没有"}
+        ctx = self.monitor.ctx(cfg, hits)
+        notify.send(ch, hits, ctx)
+        page = "，点开应该是推送页" if ctx.page_url else ""
+        return {"message": f"已发送（{where}{page}），去看看收到没有"}
+
+    def save_access(self, body: dict) -> dict:
+        """「手机访问」：局域网开关、手机用的地址、推送点开去哪。对外开放了就必须有口令。"""
+        before = self.cfgstore.load()["web"]["host"]
+
+        def fn(cfg):
+            web = cfg["web"]
+            if "lan" in body:
+                web["host"] = access.LAN_HOST if body["lan"] else "127.0.0.1"
+            if "public_url" in body:
+                web["public_url"] = access.normalize_public_url(str(body["public_url"] or ""))
+            if "push_page" in body:
+                web["push_page"] = bool(body["push_page"])
+            if (access.lan_on(cfg) or web["public_url"]) and not web["token"]:
+                web["token"] = access.new_token()
+        cfg = self.cfgstore.update(fn)
+        host = cfg["web"]["host"]
+        if self.server is not None and host != self.server.host:
+            try:
+                self.server.rebind(host)
+            except OSError as e:
+                self.cfgstore.update(lambda c: c["web"].update({"host": before}))
+                raise ValueError(f"没能对局域网开放：{e}") from e
+        token = cfg["web"]["token"]
+        # 刚生成口令时，这个浏览器也得拿到它，不然下一次刷新就被拦在外面
+        return {"_cookie": token} if token else {}
 
     def preview(self, body: dict) -> dict:
         """新建关注前先搜一下看看：直接返回搜索结果，不入库。"""
@@ -159,6 +203,7 @@ POSTS = {
     "/api/channel": "save_channel", "/api/channel/delete": "delete_channel",
     "/api/channel/test": "test_channel",
     "/api/preview": "preview", "/api/scan": "scan", "/api/feed/clear": "clear_feed",
+    "/api/access": "save_access",
 }
 
 
@@ -177,21 +222,29 @@ def make_handler(app: App):
             pass
 
         # —— 安全检查 ——
+        def _token(self) -> str:
+            return app.cfgstore.load()["web"].get("token") or ""
+
         def _host_ok(self) -> bool:
-            cfg_host = app.cfgstore.load()["web"]["host"]
-            if cfg_host not in LOOPBACK:
-                return True   # 对外开放时靠 token
+            if self._token():
+                return True   # 有口令就靠口令，手机、内网穿透的地址都放行
             host = (self.headers.get("Host") or "").rsplit(":", 1)[0]
             return host in LOOPBACK
 
         def _token_ok(self) -> bool:
-            token = app.cfgstore.load()["web"].get("token") or ""
+            token = self._token()
             if not token:
                 return True
-            cookie = http.cookies.SimpleCookie(self.headers.get("Cookie") or "")
-            if "goodsmare_token" in cookie and secrets.compare_digest(cookie["goodsmare_token"].value, token):
+            try:
+                cookie = http.cookies.SimpleCookie(self.headers.get("Cookie") or "")
+            except http.cookies.CookieError:
+                cookie = {}
+            if COOKIE in cookie and _same(cookie[COOKIE].value, token):
                 return True
-            return secrets.compare_digest(self.headers.get("X-Token") or "", token)
+            return _same(self.headers.get("X-Token") or "", token)
+
+        def _cookie(self, token: str) -> str:
+            return f"{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000"
 
         def _send(self, code: int, body: bytes, ctype: str, extra: dict | None = None):
             self.send_response(code)
@@ -205,23 +258,29 @@ def make_handler(app: App):
             self.end_headers()
             self.wfile.write(body)
 
-        def _json(self, code: int, obj):
+        def _json(self, code: int, obj, extra: dict | None = None):
             self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"),
-                       "application/json; charset=utf-8")
+                       "application/json; charset=utf-8", extra)
+
+        def _html(self, code: int, text: str):
+            self._send(code, text.encode("utf-8"), "text/html; charset=utf-8")
 
         def do_GET(self):
             if not self._host_ok():
-                return self._send(403, b"bad host", "text/plain")
+                return self._send(403, "这个地址现在打不开：先在电脑上的 goodsmare 里打开「设置 → 手机访问」。"
+                                  .encode(), "text/plain; charset=utf-8")
             url = urllib.parse.urlsplit(self.path)
             q = dict(urllib.parse.parse_qsl(url.query))
-            token = app.cfgstore.load()["web"].get("token") or ""
-            if token and secrets.compare_digest(q.get("token", ""), token):
-                # 带着 ?token= 打开一次，之后靠 cookie
-                return self._send(302, b"", "text/plain", {
-                    "Location": url.path or "/",
-                    "Set-Cookie": f"goodsmare_token={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000"})
+            if url.path.startswith("/p/"):
+                return self._push_page(url.path[3:])
+            token = self._token()
+            if token and _same(q.get("token", ""), token):
+                # 带着 ?token= 打开一次（扫二维码就是这样），之后靠 cookie
+                return self._send(302, b"", "text/plain", {"Location": url.path or "/", "Set-Cookie": self._cookie(token)})
             if not self._token_ok():
-                return self._send(401, "需要口令：在地址后面加上 ?token=你设的口令".encode(), "text/plain; charset=utf-8")
+                if url.path in ("/", "/index.html"):
+                    return self._html(401, pages.render_login(wrong="token" in q))
+                return self._json(401, {"error": "需要口令"})
             if url.path in ("/", "/index.html"):
                 return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
             try:
@@ -229,9 +288,17 @@ def make_handler(app: App):
                     return self._json(200, app.state())
                 if url.path == "/api/feed":
                     return self._json(200, app.feed(q))
+                if url.path == "/api/qr.svg":
+                    return self._send(200, qr.svg(q.get("text", "")[:1000]).encode(), "image/svg+xml")
             except Exception as e:
                 return self._json(500, {"error": str(e)})
             self._send(404, b"not found", "text/plain")
+
+        def _push_page(self, pid: str):
+            page = app.store.page(pid) if pages.ID_RE.match(pid) else None
+            if page is None:
+                return self._html(404, pages.render_missing())
+            return self._html(200, pages.render(page))
 
         def do_POST(self):
             if not self._host_ok():
@@ -248,7 +315,9 @@ def make_handler(app: App):
                 body = json.loads(self.rfile.read(length) or b"{}") if length else {}
                 if not isinstance(body, dict):
                     raise ValueError("请求格式不对")
-                return self._json(200, getattr(app, name)(body) or {})
+                result = getattr(app, name)(body) or {}
+                token = result.pop("_cookie", None)
+                return self._json(200, result, {"Set-Cookie": self._cookie(token)} if token else None)
             except (ValueError, KeyError) as e:
                 return self._json(400, {"error": str(e)})
             except net.FetchError as e:
@@ -259,9 +328,55 @@ def make_handler(app: App):
     return Handler
 
 
-def serve(app: App, host: str, port: int) -> ThreadingHTTPServer:
-    server = ThreadingHTTPServer((host, port), make_handler(app))
-    server.daemon_threads = True
-    threading.Thread(target=server.serve_forever, daemon=True, name="web").start()
-    return server
+class _HTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    block_on_close = False   # 换监听地址是在请求线程里做的，关旧服务时别等这些线程
+
+    def server_bind(self):
+        # http.server 原本在这里做一次反向 DNS（getfqdn），有的 Windows 上要卡好几秒，用不上
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = str(self.server_address[0]), self.server_address[1]
+
+
+class WebServer:
+    """网页服务。「手机访问」一拨，监听地址在 127.0.0.1 和 0.0.0.0 之间切换，不用重启。"""
+
+    def __init__(self, app: App, host: str, port: int):
+        self.app = app
+        self._lock = threading.Lock()
+        self.httpd = self._start(host, port)
+        self.host = host
+        self.port = self.httpd.server_address[1]
+        app.server = self
+
+    def _start(self, host: str, port: int) -> _HTTPServer:
+        httpd = _HTTPServer((host, port), make_handler(self.app))
+        threading.Thread(target=httpd.serve_forever, daemon=True, name="web").start()
+        return httpd
+
+    @property
+    def server_address(self):
+        return self.httpd.server_address
+
+    def rebind(self, host: str) -> None:
+        with self._lock:
+            if host == self.host:
+                return
+            old = self.httpd
+            old.shutdown()
+            old.server_close()
+            try:
+                self.httpd = self._start(host, self.port)
+            except OSError:
+                self.httpd = self._start(self.host, self.port)   # 换不过去就回到原来的地址
+                raise
+            self.host = host
+
+    def close(self) -> None:
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+
+def serve(app: App, host: str, port: int) -> WebServer:
+    return WebServer(app, host, port)
 

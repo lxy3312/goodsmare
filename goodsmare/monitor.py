@@ -17,7 +17,7 @@ import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 
-from . import net, notify
+from . import access, net, notify, pages
 from .config import ConfigStore
 from .notify import Ctx, Hit
 from .sources import SOURCES, Item, NoResults, Query
@@ -71,11 +71,11 @@ def query_sig(watch: dict, source: str = "") -> str:
 
 
 class Monitor:
-    def __init__(self, cfgstore: ConfigStore, store: Store, web_url: str = "", echo: bool = True):
+    def __init__(self, cfgstore: ConfigStore, store: Store, echo: bool = True, serving: bool = False):
         self.cfgstore = cfgstore
         self.store = store
-        self.web_url = web_url
         self.echo = echo
+        self.serving = serving    # 网页服务开着才生成推送页；once、命令行测试推送时没人提供页面
         self.busy = False
         self.last_cycle_at = 0
         self.next_cycle_at = 0
@@ -111,8 +111,17 @@ class Monitor:
             self.log(f"自动汇率获取失败（{e}），先用设置里的 {cfg['jpy_to_cny']}")
             return float(cached) if cached else cfg["jpy_to_cny"]
 
-    def ctx(self, cfg: dict) -> Ctx:
-        return Ctx(rate=self.rate(cfg), web_url=self.web_url)
+    def ctx(self, cfg: dict, hits: list[Hit] | None = None) -> Ctx:
+        """推送用的上下文。给了 hits、手机又连得上本程序时，顺手把这一轮存成推送页。"""
+        rate = self.rate(cfg)
+        base = access.phone_base(cfg) if self.serving else ""
+        page_url = ""
+        if hits and base and cfg["web"]["push_page"]:
+            try:
+                page_url = f"{base}/p/{self.store.add_page(pages.snapshot(hits, rate))}"
+            except Exception as e:   # 推送页存不下来也照样推，链接退回原商品页
+                self.log(f"推送页没存下来：{e!r}")
+        return Ctx(rate=rate, web_url=base, page_url=page_url)
 
     # —— 测试推送 ——
     def test_hits(self, cfg: dict) -> tuple[list[Hit], str]:
@@ -205,7 +214,7 @@ class Monitor:
             self.log(notify.summary_title(fresh))
             channels = [c for c in cfg["channels"] if c.get("enabled", True)]
             if channels:
-                for name, err in notify.send_all(channels, fresh, self.ctx(cfg)):
+                for name, err in notify.send_all(channels, fresh, self.ctx(cfg, fresh)):
                     self.log(f"推送失败 · {name}：{err}")
         self.store.prune()
         return fresh

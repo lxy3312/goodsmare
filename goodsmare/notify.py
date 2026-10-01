@@ -1,7 +1,10 @@
 """推送渠道。每种渠道一个函数：(渠道配置, 命中列表, 上下文) → 抛异常表示失败。
 
 一轮扫描的所有命中合成一次推送（Server酱免费版一天只有 5 条，省着用）；
-Bark / ntfy / Telegram 这类手机通知逐条发，点开直达商品页，超出上限的合成一条汇总。
+Bark / ntfy / Telegram 这类手机通知逐条发，超出上限的合成一条汇总。
+
+手机能连上本程序时（见 access.py），每轮还会生成一个推送页（pages.py）：企业微信、Bark、ntfy
+点开去推送页上对应的那一件，其他渠道在开头放一个推送页的链接。连不上就直接去商品页。
 """
 
 from __future__ import annotations
@@ -38,7 +41,13 @@ class Hit:
 @dataclass
 class Ctx:
     rate: float                    # 1 日元 = ? 人民币
-    web_url: str = ""
+    web_url: str = ""              # 手机能打开的本程序地址，没有就空
+    page_url: str = ""             # 这一轮的推送页，没有就空
+
+
+def link(h: Hit, ctx: Ctx, i: int) -> str:
+    """推送里点开去哪：有推送页就去推送页上对应的那一件，没有就直接去商品页。"""
+    return f"{ctx.page_url}#i{i + 1}" if ctx.page_url else h.item.url
 
 
 # 每种渠道需要填的字段，网页的表单按这个生成。(字段, 标签, 说明, 是否必填)
@@ -145,6 +154,50 @@ def cover(it: Item) -> str:
     return _SHOPS_WEBP.sub(r"\1@jpg", url)
 
 
+_YIMG = re.compile(r"^https://auc-pctr\.c\.yimg\.jp/i/([^?]+)")
+_MERCDN_THUMB = re.compile(r"^(https://static\.mercdn\.net)/thumb/item/jpeg/(m\w+_\d+\.jpg.*)$")
+
+
+def photo(it: Item) -> str:
+    """放大图的地方（推送页、企业微信第一篇、Telegram、Bark）用：缩略图换成各站的大图。
+
+    2026 年 9 月逐个试过，都是 JPG：煤炉 240px → 详情页 1080px 原图；Shops small → large；
+    雅虎的缩图服务改成 800px；Rakuma /m/ → /l/；Mandarake 去掉 s_；animate 缩图参数改 800。
+    骏河屋没有更大的，别的站换不了就用封面。
+    """
+    url = cover(it)
+    m = _MERCDN_THUMB.match(url)
+    if m:
+        return f"{m.group(1)}/item/detail/orig/photos/{m.group(2)}"
+    if "//assets.mercari-shops-static.com/-/small/" in url:
+        return url.replace("/-/small/", "/-/large/")
+    m = _YIMG.match(url)
+    if m:
+        return (f"https://auc-pctr.c.yimg.jp/i/{m.group(1)}?pri=l&w=800&h=800&up=0&nf_src=sy"
+                "&nf_path=images/auc/pc/top/image/1.0.3/na_170x170.png&nf_st=200")
+    url = re.sub(r"(//img\.fril\.jp/img/\d+/)m/", r"\1l/", url)
+    url = re.sub(r"(//img\.mandarake\.co\.jp/.*/)s_([^/]+)$", r"\1\2", url)
+    return re.sub(r"(resize_image\.php\?.*?)width=\d+&height=\d+", r"\1width=800&height=800", url)
+
+
+def price_tag(h: Hit) -> str:
+    return f"降价 {yen(h.item.price)}" if h.kind == "drop" else yen(h.item.price)
+
+
+PAGE_LABEL = "📄 打开推送页（大图、原链接和详细信息）"
+
+
+def page_md(ctx: Ctx) -> str:
+    return f"[{PAGE_LABEL}]({ctx.page_url})\n\n---\n\n" if ctx.page_url else ""
+
+
+def page_html(ctx: Ctx) -> str:
+    if not ctx.page_url:
+        return ""
+    return (f'<p style="margin:0 0 18px"><a href="{html.escape(ctx.page_url)}" style="display:inline-block;padding:8px 14px;'
+            f'font-size:14px;color:#c62f63;border:1px solid #f0b8cb;border-radius:8px;text-decoration:none">{PAGE_LABEL}</a></p>')
+
+
 def plain_lines(hits: list[Hit], rate: float) -> str:
     out = []
     for h in hits:
@@ -217,13 +270,13 @@ def send_serverchan(ch, hits, ctx):
     # short 是微信里那张消息卡片上显示的字（卡片本身放不了图，点开才有封面和链接）
     short = "；".join(f"{h.item.title[:24]} {yen(h.item.price)}" for h in hits[:3])
     resp = net.post(url, json_body={"title": summary_title(hits)[:32],
-                                    "desp": markdown(hits, ctx.rate), "short": short[:64]})
+                                    "desp": page_md(ctx) + markdown(hits, ctx.rate), "short": short[:64]})
     _expect(resp, "Server酱", lambda d: d.get("code") in (0, 200))
 
 
 def send_pushplus(ch, hits, ctx):
     body = {"token": ch["token"], "title": summary_title(hits),
-            "content": html_list(hits, ctx.rate), "template": "html"}
+            "content": page_html(ctx) + html_list(hits, ctx.rate), "template": "html"}
     if ch.get("topic"):
         body["topic"] = ch["topic"]
     resp = net.post("https://www.pushplus.plus/send", json_body=body)
@@ -231,13 +284,13 @@ def send_pushplus(ch, hits, ctx):
 
 
 def send_wecom(ch, hits, ctx):
-    # 图文消息一条最多 8 篇
+    # 图文消息一条最多 8 篇。第一篇是大图，后面是小图；只有一篇时才显示描述，所以价格写进标题
     for i in range(0, len(hits), 8):
         articles = [{
-            "title": f"【{src_name(h.item.source)}】{h.item.title}"[:120],
-            "description": f"{headline(h, ctx.rate)}  关注：{h.watch_name}",
-            "url": h.item.url, "picurl": cover(h.item),
-        } for h in hits[i:i + 8]]
+            "title": f"【{src_name(h.item.source)}】{price_tag(h)} {h.item.title}"[:120],
+            "description": " · ".join(p for p in (headline(h, ctx.rate), h.item.extra, f"关注：{h.watch_name}") if p),
+            "url": link(h, ctx, i + j), "picurl": photo(h.item) if j == 0 else cover(h.item),
+        } for j, h in enumerate(hits[i:i + 8])]
         resp = net.post(ch["webhook"], json_body={"msgtype": "news", "news": {"articles": articles}})
         _expect(resp, "企业微信", lambda d: d.get("errcode") == 0)
 
@@ -251,12 +304,12 @@ def send_dingtalk(ch, hits, ctx):
             {"timestamp": ts, "sign": base64.b64encode(digest).decode()})
     title = summary_title(hits)
     resp = net.post(url, json_body={"msgtype": "markdown", "markdown": {
-        "title": title, "text": f"### {title}\n\n{markdown(hits, ctx.rate)}"}})
+        "title": title, "text": f"### {title}\n\n{page_md(ctx)}{markdown(hits, ctx.rate)}"}})
     _expect(resp, "钉钉", lambda d: d.get("errcode") == 0)
 
 
 def send_feishu(ch, hits, ctx):
-    content = []
+    content = [[{"tag": "a", "text": PAGE_LABEL, "href": ctx.page_url}]] if ctx.page_url else []
     for h in hits:
         it = h.item
         # 飞书富文本只能放上传过的图，外链图片放不进来，所以这里只有文字和链接
@@ -283,10 +336,10 @@ def send_bark(ch, hits, ctx):
     single, rest = _per_item(hits)
     msgs = [{"title": f"{src_name(h.item.source)}｜{h.watch_name}",
              "body": f"{h.item.title}\n{headline(h, ctx.rate)}",
-             "url": h.item.url, "icon": cover(h.item), "image": cover(h.item)} for h in single]
+             "url": link(h, ctx, i), "icon": cover(h.item), "image": photo(h.item)} for i, h in enumerate(single)]
     if rest:
         msgs.append({"title": f"还有 {len(rest)} 件", "body": summary_title(rest),
-                     "url": ctx.web_url or rest[0].item.url})
+                     "url": link(rest[0], ctx, len(single)) if ctx.page_url else ctx.web_url or rest[0].item.url})
     for m in msgs:
         m.update({"device_key": ch["key"], "group": APP_NAME})
         resp = net.post(f"{server}/push", json_body=m)
@@ -299,10 +352,13 @@ def send_ntfy(ch, hits, ctx):
     single, rest = _per_item(hits)
     msgs = [{"title": f"{src_name(h.item.source)}｜{h.watch_name}",
              "message": f"{h.item.title}\n{headline(h, ctx.rate)}",
-             "click": h.item.url, "attach": cover(h.item) or None} for h in single]
+             "click": link(h, ctx, i), "attach": photo(h.item) or None,
+             # 点通知去推送页时，再给一个直达原商品页的按钮
+             "actions": [{"action": "view", "label": "原商品页", "url": h.item.url}] if ctx.page_url else None}
+            for i, h in enumerate(single)]
     if rest:
         msgs.append({"title": f"还有 {len(rest)} 件", "message": summary_title(rest),
-                     "click": ctx.web_url or rest[0].item.url})
+                     "click": link(rest[0], ctx, len(single)) if ctx.page_url else ctx.web_url or rest[0].item.url})
     for m in msgs:
         m = {k: v for k, v in m.items() if v}
         m["topic"] = ch["topic"]
@@ -313,16 +369,17 @@ def send_telegram(ch, hits, ctx):
     api = (ch.get("api") or "https://api.telegram.org").rstrip("/")
     base = f"{api}/bot{ch['token']}"
     single, rest = _per_item(hits)
-    for h in single:
+    for i, h in enumerate(single):
         it = h.item
+        page = f'  <a href="{html.escape(link(h, ctx, i))}">📄 推送页</a>' if ctx.page_url else ""
         caption = (f"<b>{html.escape(src_name(it.source))}｜{html.escape(h.watch_name)}</b>\n"
                    f'<a href="{html.escape(it.url)}">{html.escape(it.title)}</a>\n'
                    f"{html.escape(headline(h, ctx.rate))}\n"
-                   f'<a href="{html.escape(it.url)}">👉 打开商品页</a>')
+                   f'<a href="{html.escape(it.url)}">👉 打开商品页</a>{page}')
         sent = False
-        if cover(it):
+        if photo(it):
             resp = net.post(f"{base}/sendPhoto", json_body={
-                "chat_id": ch["chat_id"], "photo": cover(it), "caption": caption, "parse_mode": "HTML"})
+                "chat_id": ch["chat_id"], "photo": photo(it), "caption": caption, "parse_mode": "HTML"})
             sent = resp.ok
         if not sent:
             resp = net.post(f"{base}/sendMessage", json_body={
@@ -339,7 +396,7 @@ def send_email(ch, hits, ctx):
     port = int(ch.get("port") or 465)
     user = ch["user"]
     to = [a.strip() for a in (ch.get("to") or user).replace("，", ",").split(",") if a.strip()]
-    msg = MIMEText(f'<div style="font-family:sans-serif;max-width:560px">{html_list(hits, ctx.rate)}</div>',
+    msg = MIMEText(f'<div style="font-family:sans-serif;max-width:560px">{page_html(ctx)}{html_list(hits, ctx.rate)}</div>',
                    "html", "utf-8")
     msg["Subject"] = Header(summary_title(hits), "utf-8")
     msg["From"] = formataddr((APP_NAME, user))
@@ -361,11 +418,12 @@ def send_email(ch, hits, ctx):
 
 
 def send_webhook(ch, hits, ctx):
-    body = {"title": summary_title(hits), "text": plain_lines(hits, ctx.rate), "items": [
+    body = {"title": summary_title(hits), "text": plain_lines(hits, ctx.rate), "page_url": ctx.page_url, "items": [
         {**h.item.to_dict(), "source_name": src_name(h.item.source), "watch": h.watch_name,
-         "kind": h.kind, "old_price": h.old_price, "cover": cover(h.item),
+         "kind": h.kind, "old_price": h.old_price, "cover": cover(h.item), "photo": photo(h.item),
+         "link": link(h, ctx, i),
          "price_cny": round(h.item.price * ctx.rate, 1) if h.item.price is not None else None}
-        for h in hits]}
+        for i, h in enumerate(hits)]}
     net.post(ch["url"], json_body=body).check("Webhook")
 
 

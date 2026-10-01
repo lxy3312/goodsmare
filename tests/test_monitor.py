@@ -133,6 +133,33 @@ class MonitorTests(unittest.TestCase):
         send.assert_called_once()
         self.assertEqual(send.call_args[0][1][0].item.id, "m2")
 
+    def test_push_page_only_when_phone_can_open_it(self):
+        from goodsmare.notify import Hit
+        hits = [Hit(item(1), "w1", "五条悟")]
+        self.assertEqual(self.mon.ctx(self.cfg.load(), hits).page_url, "", "网页服务没开（once 模式）")
+        self.mon.serving = True
+        self.assertEqual(self.mon.ctx(self.cfg.load(), hits).page_url, "", "只听本机，手机连不上")
+        self.cfg.update(lambda c: c["web"].update({"public_url": "http://100.64.1.2:8787", "token": "t"}))
+        ctx = self.mon.ctx(self.cfg.load(), hits)
+        self.assertRegex(ctx.page_url, r"^http://100\.64\.1\.2:8787/p/[A-Za-z0-9_-]{16}$")
+        self.assertEqual(ctx.web_url, "http://100.64.1.2:8787")
+        page = self.store.page(ctx.page_url.rsplit("/", 1)[1])
+        self.assertEqual(page["items"][0]["id"], "m1")
+        self.assertEqual(self.mon.ctx(self.cfg.load()).page_url, "", "没有命中就不生成")
+        self.cfg.update(lambda c: c["web"].update({"push_page": False}))
+        self.assertEqual(self.mon.ctx(self.cfg.load(), hits).page_url, "", "用户选了直接去原商品页")
+
+    def test_cycle_pushes_with_page(self):
+        self.mon.serving = True
+        self.cfg.update(lambda c: (c.update({"channels": [{"type": "webhook", "url": "http://x/hook"}]}),
+                                   c["web"].update({"public_url": "http://pc:8787", "token": "t"})))
+        self.cycle([item(1)])
+        with mock.patch("goodsmare.notify.send") as send:
+            self.cycle([item(2), item(1)])
+        ctx = send.call_args[0][2]
+        self.assertTrue(ctx.page_url.startswith("http://pc:8787/p/"))
+        self.assertEqual(self.store.page(ctx.page_url.rsplit("/", 1)[1])["items"][0]["id"], "m2")
+
     def test_test_push_uses_latest_real_item(self):
         self.cycle([item(1)])
         self.cycle([item(2), item(1)])

@@ -285,6 +285,28 @@ main { max-width: 1280px; margin: 0 auto; padding: 24px 24px 72px; }
 .logs .bad .m { color: #ff9c93; } .logs .warn .m { color: #f4c56a; }
 .logs .none { color: var(--term-dim); }
 .misc { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.phone { display: grid; gap: 20px; padding: 20px 22px 18px; }
+.phone > .row-switch { padding: 0; align-items: flex-start; }
+.phone > .row-switch > span:first-child { font-size: 15px; font-weight: 650; }
+.phone > .row-switch small { max-width: 640px; margin-top: 3px; line-height: 1.6; }
+.phone > .row-switch .switch { margin-top: 2px; }
+.phone-main { display: flex; align-items: center; gap: 22px; padding: 16px; border-radius: 16px; background: var(--panel-2); border: 1px solid var(--line); }
+.qr { flex: none; width: 172px; height: 172px; padding: 4px; border-radius: 14px; background: #fff; box-shadow: var(--shadow-sm), inset 0 0 0 1px rgba(0, 0, 0, .06); }
+.qr img { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+.phone-info { display: grid; gap: 8px; min-width: 0; }
+.phone-info > b { font-size: 15px; font-weight: 700; }
+.phone-info p { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.65; max-width: 520px; }
+.addr { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.addr code { font: 600 14px/1.5 var(--mono); padding: 4px 10px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); overflow-wrap: anywhere; }
+.phone .chips { gap: 8px; }
+.phone .chip { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 13px; font-variant-numeric: tabular-nums; }
+.phone .chip em { font-style: normal; font-size: 12px; color: var(--muted); }
+.phone .chip.on em { color: inherit; opacity: .78; }
+.custom-url { display: flex; gap: 8px; margin-top: 10px; }
+.custom-url input { flex: 1; min-width: 0; }
+.trouble { padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
+.trouble summary { cursor: pointer; width: fit-content; font-weight: 650; color: var(--accent-ink); }
+.trouble ol { margin: 10px 0 0; padding-left: 20px; line-height: 1.8; max-width: 760px; }
 
 /* —— 弹窗 —— */
 dialog { border: 0; padding: 0; width: min(720px, calc(100vw - 24px)); max-height: min(900px, calc(100vh - 32px)); max-height: min(900px, calc(100dvh - 32px));
@@ -377,6 +399,9 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
   .src.warn, .src.err { grid-column: 1 / -1; }
   .src.warn .msg, .src.err .msg { -webkit-line-clamp: 3; }
   .channel { flex-wrap: wrap; }
+  .phone { padding: 18px 16px 16px; }
+  .phone-main { flex-direction: column; align-items: stretch; }
+  .qr { margin: 0 auto; }
   .ch-actions { width: 100%; justify-content: flex-end; padding-top: 6px; border-top: 1px solid var(--line); }
   .row2 { grid-template-columns: 1fr; }
   .form-card { padding: 18px; }
@@ -427,6 +452,8 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
   <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="3"/><path d="M4.5 8l7.5 5.5L19.5 8"/></symbol>
   <symbol id="i-code" viewBox="0 0 24 24"><path d="M8.5 7.5L4 12l4.5 4.5M15.5 7.5L20 12l-4.5 4.5M13.2 5.5l-2.4 13"/></symbol>
   <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.5 12h17M12 3c2.6 2.4 3.9 5.4 3.9 9s-1.3 6.6-3.9 9c-2.6-2.4-3.9-5.4-3.9-9S9.4 5.4 12 3z"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.8" width="11" height="18.4" rx="2.6"/><path d="M10.6 17.8h2.8"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/></symbol>
   <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 8.5l3 4 3-4M8.8 13h6.4M8.8 15.6h6.4M12 12.5V17"/></symbol>
 </svg>
 
@@ -472,7 +499,7 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
 
   <section id="tab-channels" class="tabpanel" role="tabpanel" hidden>
     <div class="page-head">
-      <div><h2>推送</h2><p>每轮扫描到的新商品合成一条推送；Bark、ntfy、Telegram 逐条推，点开直达商品页。Server酱、PushPlus 在微信里是一张文字卡片，点开才有封面和商品链接。</p></div>
+      <div><h2>推送</h2><p>每轮扫描到的新商品合成一条推送；Bark、ntfy、Telegram 逐条推。手机能打开这个网页时（设置 → 手机访问），推送点开是一张推送页，大图、价格和原链接都在上面。</p></div>
       <div class="spacer"></div>
       <button class="primary" id="addChannel"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>添加推送</button>
     </div>
@@ -515,6 +542,39 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
         <div class="log-head"><span class="dot ok live"></span>运行日志</div>
         <div class="logs" id="logs"></div>
       </div>
+    </div>
+    <h3 class="sec-h">手机访问</h3>
+    <div class="panel phone">
+      <label class="row-switch">
+        <span>让手机也能打开这个网页<small>手机和电脑连同一个 Wi-Fi 时，在手机上就能看上新、改关注、加关注；推送点开也会是一张带大图和原链接的推送页。打开后进网页要口令，扫下面的二维码会自动带上。改了马上生效。</small></span>
+        <span class="switch"><input type="checkbox" id="lanSwitch" aria-label="让手机也能打开"><span></span></span>
+      </label>
+      <div class="phone-main" id="phoneMain" hidden>
+        <div class="qr"><img id="qrImg" alt="用手机扫这个二维码打开" width="172" height="172"></div>
+        <div class="phone-info">
+          <b>用手机扫一扫</b>
+          <p>最好用收推送的那个 App 扫，比如企业微信的「扫一扫」：口令会记在那个 App 里，以后从推送页点「管理关注」就直接进来了。</p>
+          <div class="addr"><code id="phoneUrl"></code><button class="ghost sm" id="copyPhone"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg>复制带口令的链接</button></div>
+        </div>
+      </div>
+      <div class="field"><span>手机用哪个地址打开</span>
+        <div class="chips" id="addrChips"></div>
+        <div class="custom-url" id="customBox" hidden><input type="text" id="publicUrl" placeholder="比如 http://100.101.102.103:8787" autocomplete="off" aria-label="手机用的地址"><button id="savePublicUrl">保存</button></div>
+        <small>局域网地址出了家门就打不开。想在外面也能用：电脑和手机都装上 Tailscale，或者用内网穿透、把程序放到 NAS / 服务器上，再把那边的地址填进「自己填」。</small>
+      </div>
+      <div class="field"><span>推送点开后</span>
+        <div class="chips" id="pushMode"></div>
+        <small id="pushModeHint"></small>
+      </div>
+      <details class="trouble"><summary>手机打不开？</summary>
+        <ol>
+          <li>手机和电脑要连同一个 Wi-Fi，手机别用流量。</li>
+          <li>第一次打开开关时 Windows 会弹出防火墙提示，要点「允许访问」。当时点了取消的话：控制面板 → Windows Defender 防火墙 → 允许应用通过防火墙，把 Python 的「专用」和「公用」都勾上。</li>
+          <li>Windows 把这个 Wi-Fi 当成「公用网络」时也会挡住，可以在 设置 → 网络和 Internet 里把它改成「专用网络」。</li>
+          <li>路由器开了「AP 隔离」或者手机连的是访客网络，手机和电脑互相看不见。</li>
+          <li>上面列了好几个地址的话，换一个试试。</li>
+        </ol>
+      </details>
     </div>
     <h3 class="sec-h">其他</h3>
     <div class="panel misc">
@@ -627,6 +687,7 @@ let feedMax = 0, feedMin = 0, feedFilter = { watch: "", source: "" };
 let unseen = 0;
 let tab = "feed";
 let glossAll = false;
+let customOpen = false;    // 「自己填」点开了但还没保存
 
 async function api(path, body) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
@@ -634,6 +695,16 @@ async function api(path, body) {
   const d = await r.json().catch(() => ({ error: "服务器没有回应（程序关了？）" }));
   if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
   return d;
+}
+
+// 局域网的 http 页面不是安全上下文，没有 navigator.clipboard，退回老办法
+async function copyText(text) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch {}
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+  document.body.appendChild(ta); ta.select();
+  let ok = false; try { ok = document.execCommand("copy"); } catch {}
+  ta.remove(); return ok;
 }
 
 function toast(msg, bad) {
@@ -1014,7 +1085,53 @@ function renderSettings() {
   const html = S.logs.length ? S.logs.map(logLine).join("") : `<div class="none">还没有日志。</div>`;
   if (logs._h !== html) { setHTML(logs, html); if (atBottom) logs.scrollTop = logs.scrollHeight; }
   $("#version").textContent = `${S.app} v${S.version}`;
+  renderPhone();
 }
+
+function renderPhone() {
+  const a = S.access, web = S.config.web;
+  const sw = $("#lanSwitch"); if (!sw.disabled) sw.checked = a.lan;
+  const url = a.base ? a.base + "/" : "";
+  const full = url && web.token ? `${url}?token=${encodeURIComponent(web.token)}` : url;
+  $("#phoneMain").hidden = !a.base;
+  if (a.base) {
+    const src = "/api/qr.svg?text=" + encodeURIComponent(full);
+    if ($("#qrImg").getAttribute("src") !== src) $("#qrImg").src = src;
+    $("#phoneUrl").textContent = url;
+    $("#copyPhone").dataset.copy = full;
+  }
+  const lanUrl = i => `http://${i.ip}:${a.port}`, cur = web.public_url;
+  const which = !cur ? (a.ips.length ? 0 : -1) : a.ips.findIndex(i => lanUrl(i) === cur);
+  const custom = (!!cur && which < 0) || customOpen;
+  setHTML($("#addrChips"), a.ips.map((i, n) =>
+    `<button class="chip${which === n && !custom ? " on" : ""}" data-addr="${n === 0 ? "" : esc(lanUrl(i))}">${esc(i.ip)}<em>${esc(i.label)}${n === 0 ? " · 自动" : ""}</em></button>`).join("")
+    + `<button class="chip${custom ? " on" : ""}" data-addr="custom">${ico("edit")}自己填</button>`
+    + (a.lan || cur ? "" : `<span class="hint" style="align-self:center">局域网还没开，打开上面的开关，或者自己填一个手机能打开的地址。</span>`));
+  $("#customBox").hidden = !custom;
+  const inp = $("#publicUrl");
+  if (document.activeElement !== inp && !customOpen) inp.value = cur && which < 0 ? cur : "";
+  const page = web.push_page;
+  setHTML($("#pushMode"), `<button class="chip${page ? " on" : ""}" data-page="1">推送页</button><button class="chip${page ? "" : " on"}" data-page="0">直接去原商品页</button>`);
+  $("#pushModeHint").textContent = !a.base ? "手机现在还连不上这个网页，推送点开直接去原商品页。"
+    : page ? "推送页上有大图、价格、成色和原链接，还能复制链接。手机打不开上面的地址时（比如在外面用流量），推送页也打不开，那就改成直接去原商品页。"
+    : "推送点开直接去商品所在的网站。";
+}
+
+async function saveAccess(body, okMsg) {
+  try { await api("/api/access", body); if (okMsg) toast(okMsg); await refresh(); return true; }
+  catch (e) { toast(e.message, true); return false; }
+}
+
+// 推送页、链接里带过来的 #watch=ID、#new、#settings 之类
+function handleHash() {
+  const h = decodeURIComponent(location.hash.slice(1)); if (!h || !S) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  const [k, v] = h.split("=");
+  if (k === "watch") { showTab("watches"); const w = S.config.watches.find(x => x.id === v); if (w) openWatch(w); else toast("这个关注已经删掉了", true); }
+  else if (k === "new") { showTab("watches"); openWatch(null); }
+  else if ($(`#tabs [data-tab="${k}"]`)) showTab(k);
+}
+window.addEventListener("hashchange", handleHash);
 
 // —— 事件 ——
 function showTab(name) {
@@ -1137,6 +1254,33 @@ $("#saveSettings").onclick = async () => {
     renderSettings.done = false; toast("已保存"); refresh();
   } catch (e) { toast(e.message, true); }
 };
+$("#lanSwitch").onchange = async e => {
+  const sw = e.target, on = sw.checked;
+  if (!on && !["127.0.0.1", "localhost", "[::1]"].includes(location.hostname) && !confirm("关掉之后，手机（包括你现在用的这个）就打不开这个网页了。确定？")) { sw.checked = true; return; }
+  sw.disabled = true;
+  const ok = await saveAccess({ lan: on }, on ? "已对局域网开放，用手机扫二维码试试" : "已关闭，现在只有这台电脑能打开");
+  sw.disabled = false;
+  if (!ok) sw.checked = !on;
+};
+$("#addrChips").addEventListener("click", async e => {
+  const b = e.target.closest("[data-addr]"); if (!b) return;
+  if (b.dataset.addr === "custom") { customOpen = true; renderPhone(); $("#publicUrl").focus(); return; }
+  customOpen = false;
+  await saveAccess({ public_url: b.dataset.addr }, "已切换");
+});
+async function savePublicUrl() {
+  const v = $("#publicUrl").value.trim();
+  if (await saveAccess({ public_url: v }, v ? "已保存，推送里的链接会用这个地址" : "已清空，改回自动")) { customOpen = false; $("#publicUrl").blur(); renderPhone(); }
+}
+$("#savePublicUrl").onclick = savePublicUrl;
+$("#publicUrl").addEventListener("keydown", e => { if (e.key === "Enter") savePublicUrl(); });
+$("#pushMode").addEventListener("click", e => {
+  const b = e.target.closest("[data-page]"); if (b) saveAccess({ push_page: b.dataset.page === "1" }, "已保存");
+});
+$("#copyPhone").onclick = async e => {
+  toast(await copyText(e.currentTarget.dataset.copy) ? "已复制，发到手机上打开" : "复制不了，手动抄一下上面的地址", false);
+};
+
 $("#clearFeed").onclick = async () => {
   if (!confirm("清空所有上新记录？（不影响关注和已见过的商品）")) return;
   try { await api("/api/feed/clear", {}); loadFeed(true); toast("已清空"); } catch (e) { toast(e.message, true); }
@@ -1156,6 +1300,7 @@ async function refresh() {
   } catch (e) { $("#stDot").className = "dot err"; setHTML($("#stText"), esc(e.message)); }
   const saved = store.get("tab", "feed");
   if (saved !== "feed" && $(`#tabs [data-tab="${saved}"]`)) showTab(saved);
+  handleHash();
   setInterval(refresh, 6000);
   setInterval(renderStatus, 1000);
   // 卡片上的"几分钟前"隔一会儿更新一次

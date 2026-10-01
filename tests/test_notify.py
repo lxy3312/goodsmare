@@ -97,6 +97,62 @@ class NotifyTests(unittest.TestCase):
         self.assertEqual(art["picurl"], "https://img/0.jpg")
         self.assertEqual(art["url"], "https://www.suruga-ya.jp/product/detail/0")
 
+    def test_wecom_shows_price_and_big_first_image(self):
+        calls = self.send({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x"}, n=2)
+        arts = calls[0][1]["json_body"]["news"]["articles"]
+        # 多篇图文只显示标题，价格得写进标题
+        self.assertEqual(arts[0]["title"], "【骏河屋】¥1,000 缶バッジ 0")
+        self.assertIn("≈50元", arts[0]["description"])
+        self.assertIn("中古", arts[0]["description"])
+
+    def test_page_links(self):
+        ctx = Ctx(rate=0.05, web_url="http://pc:8787", page_url="http://pc:8787/p/AbCdEfGhIjKlMnOp")
+        cap = Capture({"code": 200, "errcode": 0, "ok": True})
+        with mock.patch.object(net, "post", cap):
+            notify.send({"type": "wecom", "webhook": "https://qyapi.weixin.qq.com/x"}, hits(2), ctx)
+            notify.send({"type": "bark", "key": "K"}, hits(notify.PER_ITEM_LIMIT + 2), ctx)
+            notify.send({"type": "ntfy", "topic": "t"}, hits(1), ctx)
+            notify.send({"type": "serverchan", "sendkey": "SCT1"}, hits(1), ctx)
+            notify.send({"type": "webhook", "url": "http://x"}, hits(1), ctx)
+        wecom, bark, ntfy, sc, hook = (cap.calls[0], cap.calls[1:2 + notify.PER_ITEM_LIMIT],
+                                       cap.calls[2 + notify.PER_ITEM_LIMIT], cap.calls[3 + notify.PER_ITEM_LIMIT],
+                                       cap.calls[4 + notify.PER_ITEM_LIMIT])
+        arts = wecom[1]["json_body"]["news"]["articles"]
+        self.assertEqual([a["url"] for a in arts], [ctx.page_url + "#i1", ctx.page_url + "#i2"])
+        self.assertEqual(bark[0][1]["json_body"]["url"], ctx.page_url + "#i1")
+        self.assertEqual(bark[-1][1]["json_body"]["url"], ctx.page_url + f"#i{notify.PER_ITEM_LIMIT + 1}")
+        body = ntfy[1]["json_body"]
+        self.assertEqual(body["click"], ctx.page_url + "#i1")
+        self.assertEqual(body["actions"][0]["url"], "https://www.suruga-ya.jp/product/detail/0", "还能直达原商品页")
+        self.assertTrue(sc[1]["json_body"]["desp"].startswith(f"[{notify.PAGE_LABEL}]({ctx.page_url})"))
+        self.assertIn("打开商品页](https://www.suruga-ya.jp/product/detail/0)", sc[1]["json_body"]["desp"])
+        self.assertEqual(hook[1]["json_body"]["page_url"], ctx.page_url)
+        self.assertEqual(hook[1]["json_body"]["items"][0]["link"], ctx.page_url + "#i1")
+
+    def test_no_page_means_direct_links(self):
+        calls = self.send({"type": "ntfy", "topic": "t"})
+        body = calls[0][1]["json_body"]
+        self.assertEqual(body["click"], "https://www.suruga-ya.jp/product/detail/0")
+        self.assertNotIn("actions", body)
+
+    def test_photo_is_the_big_version(self):
+        def p(url, source):
+            return notify.photo(Item(source=source, id="1", title="t", price=1, url="u", image=url))
+        # 2026 年 9 月逐个试过能打开、都是 JPG
+        self.assertEqual(p("https://static.mercdn.net/thumb/item/webp/m9_1.jpg?17", "mercari"),
+                         "https://static.mercdn.net/item/detail/orig/photos/m9_1.jpg?17")
+        self.assertEqual(p("https://assets.mercari-shops-static.com/-/small/plain/2JX.jpg@webp", "mercari"),
+                         "https://assets.mercari-shops-static.com/-/large/plain/2JX.jpg@jpg")
+        self.assertIn("?pri=l&w=800&h=800&", p("https://auc-pctr.c.yimg.jp/i/auctions.c.yimg.jp/a/i-img.jpg"
+                                                "?pri=s&w=298&h=298&ccw=298&cch=298&fill=1", "yahoo_flea"))
+        self.assertEqual(p("https://img.fril.jp/img/85/m/29.jpg?1", "rakuma"), "https://img.fril.jp/img/85/l/29.jpg?1")
+        self.assertEqual(p("https://img.mandarake.co.jp/webshopimg/01/00/389/0100684389/s_0100.jpg", "mandarake"),
+                         "https://img.mandarake.co.jp/webshopimg/01/00/389/0100684389/0100.jpg")
+        self.assertEqual(p("https://tc-animate.techorus-cdn.com/resize_image/resize_image.php?image=a.jpg&width=400&height=400&square=1",
+                           "animate"),
+                         "https://tc-animate.techorus-cdn.com/resize_image/resize_image.php?image=a.jpg&width=800&height=800&square=1")
+        self.assertEqual(p("", "rakuma"), "")
+
     def test_bark_per_item_with_overflow_summary(self):
         calls = self.send({"type": "bark", "key": "K"}, n=notify.PER_ITEM_LIMIT + 3, reply={"code": 200})
         self.assertEqual(len(calls), notify.PER_ITEM_LIMIT + 1)

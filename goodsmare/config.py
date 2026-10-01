@@ -17,7 +17,9 @@ DEFAULTS = {
     "proxy": "",            # 例如 http://127.0.0.1:7890 ；留空则用系统环境变量
     "jpy_to_cny": 0.048,    # 自动汇率拿不到时用这个
     "auto_rate": True,
-    "web": {"host": "127.0.0.1", "port": 8787, "token": ""},
+    # host 为 0.0.0.0 时对局域网开放（必须有 token）；public_url 是手机打开本程序用的地址，
+    # 空着就用自动找到的局域网地址；push_page 为真时，推送点开是本程序上的推送页
+    "web": {"host": "127.0.0.1", "port": 8787, "token": "", "public_url": "", "push_page": True},
     "channels": [],
     "watches": [],
 }
@@ -102,6 +104,11 @@ def normalize(cfg: dict) -> dict:
         out["jpy_to_cny"] = DEFAULTS["jpy_to_cny"]
     out["auto_rate"] = bool(out["auto_rate"])
     out["proxy"] = str(out["proxy"] or "").strip()
+    web = out["web"]
+    web["host"] = str(web.get("host") or "127.0.0.1").strip()
+    web["token"] = str(web.get("token") or "").strip()
+    web["public_url"] = str(web.get("public_url") or "").strip().rstrip("/")
+    web["push_page"] = bool(web.get("push_page", True))
     out["watches"] = [normalize_watch(w) for w in out["watches"] if isinstance(w, dict)]
     out["channels"] = [normalize_channel(c) for c in out["channels"] if isinstance(c, dict)]
     return out
