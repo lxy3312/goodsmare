@@ -6,5 +6,5 @@ if sys.version_info < (3, 9):
     sys.exit("goodsmare 需要 Python 3.9 或更新的版本（现在是 %d.%d），去 https://www.python.org/downloads/ 装个新的。"
              % sys.version_info[:2])
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 APP_NAME = "goodsmare"
