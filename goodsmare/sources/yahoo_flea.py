@@ -61,6 +61,9 @@ class YahooFlea(Source):
     name = "雅虎闲置"
     home = BASE + "/"
 
+    def search_url(self, q: Query) -> str:
+        return f"{BASE}/search/{urllib.parse.quote(q.keyword)}?open=1&sort=openTime&order=desc"
+
     def search(self, q: Query) -> list[Item]:
         params = {"query": q.keyword, "results": 100, "imageShape": "square",
                   "sort": "openTime", "order": "desc", "webp": "false",

@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from . import APP_NAME
-from .notify import Hit, cover, photo, src_name
+from .notify import BUY_TARGETS, Hit, buy_url, cover, is_cny, money, photo, src_name
 from .store import PAGE_KEEP_DAYS as KEEP_DAYS
 
 STATIC = Path(__file__).parent / "static"
@@ -30,13 +30,13 @@ FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox
            "L51 18.6' stroke='white' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='32' r='5' fill='white'/%3E%3C/svg%3E")
 
 
-def snapshot(hits: list[Hit], rate: float) -> dict:
-    """把一轮的命中存成推送页要用的数据。"""
-    return {"at": int(time.time()), "rate": rate, "items": [{
+def snapshot(hits: list[Hit], rate: float, buy: str = "") -> dict:
+    """把一次推送的命中存成推送页要用的数据。buy 是设置里选的「去哪买」。"""
+    return {"at": int(time.time()), "rate": rate, "buy_name": BUY_TARGETS.get(buy, ""), "items": [{
         "source": h.item.source, "id": h.item.id, "title": h.item.title, "price": h.item.price,
         "old_price": h.old_price, "kind": h.kind, "url": h.item.url, "image": cover(h.item) or h.item.image,
         "photo": photo(h.item), "extra": h.item.extra, "created": h.item.created,
-        "watch_id": h.watch_id, "watch_name": h.watch_name,
+        "watch_id": h.watch_id, "watch_name": h.watch_name, "buy": buy_url(h.item, buy),
     } for h in hits]}
 
 
@@ -59,10 +59,6 @@ def _safe_url(url: str) -> str:
 def _when(ts: int) -> str:
     t = time.localtime(ts)
     return f"{t.tm_mon}月{t.tm_mday}日 {t.tm_hour:02d}:{t.tm_min:02d}"
-
-
-def _yen(p) -> str:
-    return "价格未知" if p is None else f"¥{p:,}"
 
 
 def _cny(p, rate: float) -> str:
@@ -136,6 +132,7 @@ main { max-width: 760px; margin: 0 auto; padding: 18px 16px 40px; padding-bottom
 .price { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; margin-top: 8px; }
 .price b { font-size: 28px; font-weight: 800; letter-spacing: -.3px; color: var(--accent-ink); font-variant-numeric: tabular-nums; }
 .price b i { font-style: normal; font-size: .62em; margin-right: 1px; }
+.price b i.u { margin: 0 0 0 3px; }
 .price .cny { color: var(--ink-2); font-size: 14.5px; font-weight: 600; }
 .price .unknown { color: var(--muted); font-size: 16px; font-weight: 600; }
 .was { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
@@ -223,8 +220,10 @@ def _doc(title: str, body: str, script: bool = False) -> str:
         + "</body>\n</html>\n")
 
 
-def _item(n: int, it: dict, rate: float, at: int) -> str:
+def _item(n: int, it: dict, rate: float, at: int, buy_name: str = "") -> str:
     url = _safe_url(it["url"])
+    buy = _safe_url(it.get("buy", ""))
+    buy = buy if buy and buy != url else ""
     big, small = _safe_url(it.get("photo", "")), _safe_url(it.get("image", ""))
     src = big or small
     style = f"--c:var(--s-{esc(it['source'])},#71666c);--ci:var(--si-{esc(it['source'])},#fff)"
@@ -242,11 +241,16 @@ def _item(n: int, it: dict, rate: float, at: int) -> str:
     if drop and old and it["price"] is not None:
         pct = round((1 - it["price"] / old) * 100)
         kind = f'<span class="kind drop">降价{f" −{pct}%" if pct > 0 else ""}</span>'
-        was = f'<div class="was">原价 <s>{_yen(old)}</s>，便宜了 {_yen(old - it["price"])}</div>'
+        was = (f'<div class="was">原价 <s>{money(old, it["source"])}</s>，'
+               f'便宜了 {money(old - it["price"], it["source"])}</div>')
     elif not drop:
         kind = '<span class="kind">上新</span>'
-    price = ('<span class="unknown">价格未知</span>' if it["price"] is None
-             else f'<b><i>¥</i>{it["price"]:,}</b><span class="cny">{_cny(it["price"], rate)}</span>')
+    if it["price"] is None:
+        price = '<span class="unknown">价格未知</span>'
+    elif is_cny(it["source"]):     # 闲鱼：本来就是人民币
+        price = f'<b>{it["price"]:,}<i class="u">元</i></b>'
+    else:
+        price = f'<b><i>¥</i>{it["price"]:,}</b><span class="cny">{_cny(it["price"], rate)}</span>'
 
     facts = [("网站", esc(src_name(it["source"])))]
     if it.get("extra"):
@@ -262,11 +266,18 @@ def _item(n: int, it: dict, rate: float, at: int) -> str:
     rows = "".join(f"<div><dt>{k}</dt><dd>{v}</dd></div>" for k, v in facts)
 
     link = f'href="{esc(url)}" rel="noreferrer"' if url else ""
-    acts = (f'<div class="acts"><a class="btn primary" {link}>{ICON_OUT}打开原商品页</a>'
-            f'<button class="btn" type="button" data-copy="{esc(url)}">{ICON_COPY}复制链接</button></div>'
-            f'<div class="url">{esc(url)}</div>') if url else ""
+    go = f'href="{esc(buy)}" rel="noreferrer"' if buy else link
+    if buy:   # 选了任意门：主按钮去任意门买，原商品页放第二个
+        acts = (f'<div class="acts"><a class="btn primary" {go}>{ICON_OUT}去{esc(buy_name or "代购网站")}买</a>'
+                f'<a class="btn" {link}>原商品页</a>'
+                f'<button class="btn" type="button" data-copy="{esc(url)}">{ICON_COPY}复制链接</button></div>'
+                f'<div class="url">{esc(url)}</div>')
+    else:
+        acts = (f'<div class="acts"><a class="btn primary" {link}>{ICON_OUT}打开原商品页</a>'
+                f'<button class="btn" type="button" data-copy="{esc(url)}">{ICON_COPY}复制链接</button></div>'
+                f'<div class="url">{esc(url)}</div>') if url else ""
     return (f'<article class="item" id="i{n}" style="{style}">'
-            f'<a class="pic" {link} aria-label="打开原商品页">{pic}<span class="badge">{esc(src_name(it["source"]))}</span>{kind}</a>'
+            f'<a class="pic" {go} aria-label="打开商品">{pic}<span class="badge">{esc(src_name(it["source"]))}</span>{kind}</a>'
             f'<div class="body"><h2 lang="ja">{esc(it["title"])}</h2><div class="price">{price}</div>{was}'
             f'<dl class="facts">{rows}</dl>{acts}</div></article>')
 
@@ -288,7 +299,7 @@ def render(page: dict) -> str:
         f'<header class="top"><a class="brand" href="/">{LOGO}<span>{APP_NAME}</span></a>'
         f'<a class="manage" href="/">{ICON_GEAR}管理关注</a></header>\n<main>\n'
         f'<section class="hero"><h1>{esc(title)}</h1><p>{_when(at)} 推送 · 共 {len(items)} 件</p></section>\n'
-        f"{jump}\n" + "\n".join(_item(n, it, rate, at) for n, it in enumerate(items, 1)) +
+        f"{jump}\n" + "\n".join(_item(n, it, rate, at, page.get("buy_name", "")) for n, it in enumerate(items, 1)) +
         f'\n<footer><nav><a href="/#new">{ICON_PLUS}新建关注</a><a href="/">{ICON_GEAR}管理关注</a></nav>'
         f"价格和状态是推送那一刻的，以原网页为准。<br>这个页面保留 {KEEP_DAYS} 天。</footer>\n</main>")
     return _doc(f"{title} · {APP_NAME}", body, script=True)

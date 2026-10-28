@@ -6,6 +6,7 @@
 
 import json
 import unittest
+import urllib.parse
 from unittest import mock
 
 from goodsmare import net
@@ -394,6 +395,22 @@ class ParserTests(unittest.TestCase):
         self.assertEqual((params["ss"], params["sl"], params["nf"], params["nd[]"]), (5, 100, 1, 7))
         self.assertEqual(params["smt"], "zzz")
 
+    def test_sites_changed_in_october(self):
+        """2026 年 10 月：骏河屋没结果回 404，Mandarake 换了没结果的说法，animate 有时先给 JavaScript 检查页。"""
+        none = net.Response(404, "u", {"Content-Type": "text/html; charset=utf-8"},
+                            "<p>該当件数：0件中 0 -0件</p><p>検索結果は０件です。</p>".encode())
+        with mock.patch.object(net, "get", return_value=none):
+            self.assertIsInstance(Surugaya().search(Query("pitcher56")), NoResults)
+        broken = net.Response(404, "u", {}, b"<title>404 Not Found</title>")
+        with mock.patch.object(net, "get", return_value=broken):
+            with self.assertRaises(net.FetchError):
+                Surugaya().search(Query("pitcher56"))
+        self.assertIsInstance(Mandarake.parse("<div>検索結果 0 商品が見つかりませんでした</div>"), NoResults)
+        gate = ("<html><script>document.cookie = 'cookietest=1'; document.location.href = decodeURIComponent('%2F%3Fc%3D');"
+                "</script><noscript>このサイトではJavaScriptを有効にする必要があります。</noscript></html>")
+        with self.assertRaises(net.Blocked):
+            Animate.parse(gate)
+
     def test_animate_fallback(self):
         html = ('<div><section><a href="/pn/x/pd/1234567/"><img src="https://x/1.jpg"><h2>新デザインの商品</h2></a>'
                 '<div>3,300円(税込)</div></section>'
@@ -439,6 +456,17 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(items[0].title, "呪術廻戦 缶バッジ 五条悟")
         self.assertEqual(items[0].url, "https://order.mandarake.co.jp/order/detailPage/item?itemCode=1234567890")
         self.assertEqual(items[1].image, "https://img.mandarake.co.jp/r18.jpg")
+
+
+    def test_search_urls(self):
+        """关注页上点网站名打开的地址：每个站都带着关键词。"""
+        from goodsmare.sources import SOURCES
+        q = Query("ミドリ cd", price_max=3000)
+        for key, src in SOURCES.items():
+            with self.subTest(key):
+                url = src.search_url(q)
+                self.assertTrue(url.startswith("https://"))
+                self.assertIn(urllib.parse.quote("ミドリ"), url)
 
 
 if __name__ == "__main__":

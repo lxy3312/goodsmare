@@ -7,7 +7,7 @@ import re
 from .. import net
 from ..htmlparse import parse
 from .base import (Item, NoResults, Query, Source, generic_items, img_src, looks_sold,
-                   parse_yen, to_int)
+                   parse_yen, to_int, with_params)
 
 SEARCH = "https://fril.jp/s"
 LINK = re.compile(r"item\.fril\.jp/([0-9A-Za-z]+)")
@@ -23,11 +23,16 @@ class Rakuma(Source):
     name = "乐天Rakuma"
     home = "https://fril.jp/"
 
+    @staticmethod
+    def params(q: Query) -> dict:
+        return {"query": q.keyword, "sort": "created_at", "order": "desc", "transaction": "selling",
+                "min": q.price_min or None, "max": q.price_max or None}
+
+    def search_url(self, q: Query) -> str:
+        return with_params(SEARCH, self.params(q))
+
     def search(self, q: Query) -> list[Item]:
-        params = {"query": q.keyword, "sort": "created_at", "order": "desc",
-                  "transaction": "selling",
-                  "min": q.price_min or None, "max": q.price_max or None}
-        html = net.get(SEARCH, params=params).check("Rakuma").text()
+        html = net.get(SEARCH, params=self.params(q)).check("Rakuma").text()
         return self.parse(html)
 
     @staticmethod

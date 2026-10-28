@@ -9,11 +9,19 @@ import threading
 import uuid
 from pathlib import Path
 
-ALL_SOURCES = ["mercari", "yahoo_auction", "yahoo_flea", "rakuma", "surugaya", "mandarake", "animate"]
+from . import message_layout
+
+# 新建关注默认勾上的网站；闲鱼要先登录，用的人自己勾
+DEFAULT_SOURCES = ["mercari", "yahoo_auction", "yahoo_flea", "rakuma", "surugaya", "mandarake", "animate"]
+ALL_SOURCES = DEFAULT_SOURCES + ["xianyu"]
+
+MIN_INTERVAL = 10
 
 DEFAULTS = {
-    "interval": 180,        # 两轮扫描之间隔多少秒
+    "interval": 60,         # 同一个关注在同一个网站多久查一次（秒）；关注多时还受下面的请求间隔限制
     "request_gap": 3.0,     # 同一个网站两次请求之间至少隔多少秒，别把人家打挂、也别被封
+    "buy": "",              # 推送和上新页里点商品去哪：空 = 原网页，doorzo = 任意门
+    "message": None,         # 空着用各渠道原有排版；消息积木可统一配置，也可在渠道上单独覆盖
     "proxy": "",            # 例如 http://127.0.0.1:7890 ；留空则用系统环境变量
     "jpy_to_cny": 0.048,    # 自动汇率拿不到时用这个
     "auto_rate": True,
@@ -28,7 +36,7 @@ WATCH_DEFAULTS = {
     "id": "",
     "name": "",
     "keyword": "",
-    "sources": list(ALL_SOURCES),
+    "sources": list(DEFAULT_SOURCES),
     "price_min": 0,
     "price_max": 0,
     "must": [],             # 标题里必须全部出现的词（煤炉搜索很模糊，靠这个过滤）；"A|B" 表示任一个
@@ -80,6 +88,12 @@ def normalize_channel(c: dict) -> dict:
     out.update({k: (v.strip() if isinstance(v, str) else v) for k, v in (c or {}).items()})
     out["id"] = str(out["id"] or new_id())
     out["enabled"] = bool(out.get("enabled", True))
+    if "message" in out:
+        layout = message_layout.normalize(out["message"])
+        if layout is None:
+            out.pop("message")
+        else:
+            out["message"] = layout
     return out
 
 
@@ -91,9 +105,11 @@ def normalize(cfg: dict) -> dict:
         elif k in DEFAULTS:
             out[k] = v
     try:
-        out["interval"] = max(30, int(float(out["interval"])))
+        out["interval"] = max(MIN_INTERVAL, int(float(out["interval"])))
     except (TypeError, ValueError):
         out["interval"] = DEFAULTS["interval"]
+    out["buy"] = out["buy"] if out["buy"] in ("", "doorzo") else ""
+    out["message"] = message_layout.normalize(out["message"])
     try:
         out["request_gap"] = max(0.5, float(out["request_gap"]))
     except (TypeError, ValueError):

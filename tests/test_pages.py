@@ -78,5 +78,13 @@ class PageTests(unittest.TestCase):
         self.assertFalse(re.match(pages.ID_RE, "short"))
 
 
+    def test_cny_item(self):
+        it = Item(source="xianyu", id="870001", title="黑胶", price=380, url="https://www.goofish.com/item?id=870001",
+                  image="https://img.alicdn.com/bao/uploaded/i1/a.jpg")
+        html = pages.render(pages.snapshot([Hit(it, "w1", "GYBE")], 0.05))
+        self.assertIn('380<i class="u">元</i>', html)
+        self.assertNotIn("≈", html)
+
+
 if __name__ == "__main__":
     unittest.main()

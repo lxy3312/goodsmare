@@ -14,12 +14,13 @@ import urllib.parse
 
 from .. import net
 from ..htmlparse import parse
-from .base import Item, NoResults, Query, Source, generic_items, img_src, parse_yen
+from .base import Item, NoResults, Query, Source, generic_items, img_src, parse_yen, with_params
 
 SEARCH = "https://order.mandarake.co.jp/order/listPage/list"
 BASE = "https://order.mandarake.co.jp/"
 LINK = re.compile(r"itemCode=([0-9A-Za-z]+)")
-EMPTY = ("該当する商品はありませんでした", "検索結果はありません", "該当する商品がありません")
+# 2026 年 10 月起写成「検索結果 0 商品が見つかりませんでした」
+EMPTY = ("該当する商品はありませんでした", "検索結果はありません", "該当する商品がありません", "商品が見つかりませんでした")
 TAX_IN = re.compile(r"税込\s*([0-9][0-9,，]*)\s*円")
 
 
@@ -39,15 +40,22 @@ class Mandarake(Source):
     key = "mandarake"
     name = "Mandarake"
     home = BASE
+    min_gap = 4.0   # 请求太密容易被拦，比别的站慢一点
 
     def __init__(self):
         super().__init__()
         self.cookies = http.cookiejar.CookieJar()
 
+    @staticmethod
+    def params(q: Query) -> dict:
+        return {"keyword": q.keyword, "dispAdult": 0, "soldOut": 1, "sort": "arrival",
+                "sortOrder": 1, "dispCount": 48, "lang": "ja", "maxPrice": q.price_max or None}
+
+    def search_url(self, q: Query) -> str:
+        return with_params(SEARCH, self.params(q))
+
     def search(self, q: Query) -> list[Item]:
-        params = {"keyword": q.keyword, "dispAdult": 0, "soldOut": 1, "sort": "arrival",
-                  "sortOrder": 1, "dispCount": 48, "lang": "ja",
-                  "maxPrice": q.price_max or None}
+        params = self.params(q)
         for _ in range(2):
             resp = net.get(SEARCH, params=params, cookies=self.cookies).check("Mandarake")
             if urllib.parse.urlsplit(resp.url).netloc == urllib.parse.urlsplit(BASE).netloc:

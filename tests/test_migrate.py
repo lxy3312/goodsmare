@@ -159,6 +159,7 @@ class MigrateTests(unittest.TestCase):
         self.assertEqual(len(self.new_cfg.load()["watches"]), 3)
 
     def test_fresh_install_takes_everything(self):
+        ConfigStore(self.old / "config.json").update(lambda c: c.update({"buy": "doorzo"}))
         fresh = Path(self.tmp.name) / "fresh" / "data"
         text, changes = migrate.run(self.old, fresh, apply=True)   # 给 data 文件夹也行
         self.assertGreater(changes, 0)
@@ -167,8 +168,14 @@ class MigrateTests(unittest.TestCase):
         self.assertEqual([w["id"] for w in cfg["watches"]], ["old1", "old2"])
         self.assertEqual(cfg["interval"], 30, "新装的还没配过，沿用旧版的设置")
         self.assertEqual(cfg["proxy"], "http://127.0.0.1:7890")
+        self.assertEqual(cfg["buy"], "doorzo", "新装的也沿用旧版的商品跳转设置")
         self.assertEqual(len(rows(fresh / "goodsmare.db", "SELECT * FROM feed")), 4)
         self.assertEqual(rows(fresh / "goodsmare.db", "SELECT COUNT(*) FROM page"), [(0,)], "新版的表也建好了")
+
+    def test_merging_keeps_the_current_buy_setting(self):
+        ConfigStore(self.old / "config.json").update(lambda c: c.update({"buy": "doorzo"}))
+        self.migrate()
+        self.assertEqual(self.new_cfg.load()["buy"], "")
 
     def test_copies_files_when_read_only_open_fails(self):
         missing = (Path(self.tmp.name) / "no-such-dir" / "x.db").as_uri()   # 只读打开这个一定失败

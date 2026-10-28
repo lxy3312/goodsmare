@@ -17,7 +17,7 @@ import webbrowser
 from pathlib import Path
 
 from . import APP_NAME, __version__, access, net, notify
-from .config import ALL_SOURCES, ConfigStore, normalize_watch
+from .config import ALL_SOURCES, DEFAULT_SOURCES, ConfigStore, normalize_watch
 from .monitor import Monitor, passes, query_of
 from .sources import SOURCES
 from .store import Store
@@ -33,6 +33,7 @@ ALIASES = {
     "骏河屋": "surugaya", "駿河屋": "surugaya", "surugaya": "surugaya", "suruga": "surugaya",
     "mandarake": "mandarake", "まんだらけ": "mandarake", "蔓德拉": "mandarake", "曼达拉": "mandarake",
     "animate": "animate", "アニメイト": "animate",
+    "闲鱼": "xianyu", "咸鱼": "xianyu", "xianyu": "xianyu", "goofish": "xianyu",
     "yahoo_auction": "yahoo_auction",
 }
 
@@ -119,8 +120,10 @@ def cmd_once(args):
 
 
 def cmd_search(args):
-    cfgstore, _ = _stores(args)
+    cfgstore, store = _stores(args)
     cfg = cfgstore.load()
+    monitor = Monitor(cfgstore, store, echo=False)   # 顺带把闲鱼的登录态读进来
+    rate = monitor.rate(cfg, fetch=False)
     net.set_proxy(cfg["proxy"])
     if args.dump:
         net.dump_dir = Path(args.dump)
@@ -135,11 +138,11 @@ def cmd_search(args):
         sys.exit(f"失败：{e}")
     print(f"{src.name} · 「{watch['keyword']}」 {len(items)} 件，用时 {time.time() - t:.1f}s\n")
     for it in items[:args.limit]:
-        mark = " " if passes(watch, it) else "×"
-        price = "?" if it.price is None else f"{it.price:,}"
+        mark = " " if passes(watch, it, rate) else "×"
+        price = notify.money(it.price, it.source)
         extra = f"  [{it.extra}]" if it.extra else ""
         sold = "  (已售)" if it.sold else ""
-        print(f"{mark} ¥{price:>8}  {it.title[:60]}{extra}{sold}\n             {it.url}")
+        print(f"{mark} {price:>9}  {it.title[:60]}{extra}{sold}\n             {it.url}")
     if not items:
         print("一件都没有。如果网站上明明搜得到，多半是页面改版了："
               "加上 --dump 目录 把原始页面存下来，拿去对照解析代码。")
@@ -149,7 +152,7 @@ def cmd_search(args):
 
 def cmd_add(args):
     cfgstore, _ = _stores(args)
-    sources = [_source(s) for s in args.sources.split(",")] if args.sources else list(ALL_SOURCES)
+    sources = [_source(s) for s in args.sources.split(",")] if args.sources else list(DEFAULT_SOURCES)
     watch = normalize_watch({"keyword": " ".join(args.keyword), "name": args.name or "",
                              "sources": sources, "price_min": args.min, "price_max": args.max,
                              "must": args.must or "", "exclude": args.exclude or "",
@@ -234,7 +237,7 @@ def main(argv=None):
     sub.add_parser("once", help="扫一轮就退出")
 
     s = sub.add_parser("search", help="试搜一个网站")
-    s.add_argument("source", help="网站：煤炉 雅虎 雅虎闲置 乐天 骏河屋 mandarake animate")
+    s.add_argument("source", help="网站：煤炉 雅虎 雅虎闲置 乐天 骏河屋 mandarake animate 闲鱼")
     s.add_argument("keyword", nargs="+")
     a = sub.add_parser("add", help="加一个关注")
     a.add_argument("keyword", nargs="+")

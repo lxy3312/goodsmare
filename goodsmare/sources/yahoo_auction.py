@@ -13,7 +13,7 @@ import time
 from .. import net
 from ..htmlparse import parse
 from .base import (Item, NoResults, Query, Source, generic_items, img_src, next_data,
-                   parse_yen, to_int, walk_json)
+                   parse_yen, to_int, walk_json, with_params)
 
 SEARCH = "https://auctions.yahoo.co.jp/search/search"
 LINK = re.compile(r"auctions\.yahoo\.co\.jp/jp/auction/([A-Za-z0-9]+)")
@@ -39,10 +39,16 @@ class YahooAuction(Source):
     name = "雅虎拍卖"
     home = "https://auctions.yahoo.co.jp/"
 
+    @staticmethod
+    def params(q: Query) -> dict:
+        return {"p": q.keyword, "s1": "new", "o1": "d", "n": 100,
+                "aucminprice": q.price_min or None, "aucmaxprice": q.price_max or None}
+
+    def search_url(self, q: Query) -> str:
+        return with_params(SEARCH, self.params(q))
+
     def search(self, q: Query) -> list[Item]:
-        params = {"p": q.keyword, "s1": "new", "o1": "d", "n": 100,
-                  "aucminprice": q.price_min or None, "aucmaxprice": q.price_max or None}
-        html = net.get(SEARCH, params=params).check("雅虎拍卖").text()
+        html = net.get(SEARCH, params=self.params(q)).check("雅虎拍卖").text()
         return self.parse(html)
 
     @staticmethod

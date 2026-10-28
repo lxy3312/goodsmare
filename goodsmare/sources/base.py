@@ -44,6 +44,10 @@ class Source:
     key = ""
     name = ""
     home = ""
+    currency = "JPY"     # 价格的币种，闲鱼是人民币
+    login = False        # 要登录才能搜
+    min_gap = 0.0        # 同站两次请求至少隔几秒，比设置里的「同站请求间隔」大时用这个
+    min_interval = 0     # 同一个关注在这个站至少隔几秒才搜一次
     # 解析方式改得让旧记录不可信时（比如以前价格取错了）加一，监控会在这个站重新记一遍基线
     rev = 1
 
@@ -52,6 +56,19 @@ class Source:
 
     def search(self, q: Query) -> list[Item]:
         raise NotImplementedError
+
+    def search_url(self, q: Query) -> str:
+        """在浏览器里看同一个搜索的地址：关注页上点网站名打开的就是它。"""
+        return self.home
+
+    def ready(self) -> bool:
+        """能不能搜：要登录的站没登录时是 False。"""
+        return True
+
+
+def with_params(url: str, params: dict) -> str:
+    clean = {k: v for k, v in params.items() if v is not None and v != ""}
+    return url + ("&" if "?" in url else "?") + urllib.parse.urlencode(clean) if clean else url
 
 
 class NoResults(list):

@@ -10,7 +10,7 @@ import uuid
 
 from .. import net
 from ..es256 import SigningKey, jws
-from .base import Item, NoResults, Query, Source, to_int
+from .base import Item, NoResults, Query, Source, to_int, with_params
 
 API = "https://api.mercari.jp/v2/entities:search"
 
@@ -77,6 +77,11 @@ class Mercari(Source):
             "withAuction": True,
             "laplaceDeviceUuid": str(uuid.uuid4()),
         }
+
+    def search_url(self, q: Query) -> str:
+        return with_params("https://jp.mercari.com/search", {
+            "keyword": q.keyword, "sort": "created_time", "order": "desc", "status": "on_sale",
+            "price_min": q.price_min or None, "price_max": q.price_max or None})
 
     def search(self, q: Query) -> list[Item]:
         headers = {"X-Platform": "web", "Accept": "application/json, text/plain, */*",

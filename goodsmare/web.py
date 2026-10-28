@@ -18,11 +18,12 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import APP_NAME, __version__, access, migrate, net, notify, pages, qr
+from . import APP_NAME, __version__, access, message_layout, migrate, net, notify, pages, qr
 from .access import LOOPBACK
 from .config import ALL_SOURCES, ConfigStore, normalize_channel, normalize_watch
-from .monitor import Monitor, norm, passes, query_of
-from .sources import SOURCES, Item
+from .monitor import Monitor, estimate_period, norm, passes, query_of
+from .sources import SOURCES, Item, Query
+from .sources.xianyu import KV_COOKIES, account as xianyu_account
 from .store import Store
 
 STATIC = Path(__file__).parent / "static"
@@ -32,6 +33,32 @@ COOKIE = "goodsmare_token"
 def _same(a: str, b: str) -> bool:
     # compare_digest 遇到非 ASCII 的 str 会抛异常，统一转成字节再比
     return hmac.compare_digest((a or "").encode(), (b or "").encode())
+
+
+# 0.3 及以前记下的状态没有 kind，看字猜一下
+_GUESS = (("连不上", "net"), ("代理", "net"), ("拦下", "blocked"), ("太频繁", "blocked"),
+          ("解析到 0 件", "parse"), ("登录", "login"))
+
+
+def problems(cfg: dict, statuses: dict) -> list[dict]:
+    """启用的关注里，最近一次没搜成的网站。同一个站、同一类问题并成一条，网页上集中说一次，
+    不用在每个关注里重复一遍。all 为真表示用这个站的关注全都这样。"""
+    out: dict = {}
+    users: dict = {}
+    for w in cfg["watches"]:
+        if not w["enabled"] or not w["keyword"]:
+            continue
+        for key in w["sources"]:
+            users[key] = users.get(key, 0) + 1
+            st = statuses.get(w["id"], {}).get(key)
+            if not st or st["ok"]:
+                continue
+            kind = st.get("kind") or next((k for word, k in _GUESS if word in st["message"]), "error")
+            p = out.setdefault((key, kind), {"source": key, "kind": kind, "message": st["message"], "watches": []})
+            p["watches"].append(w["name"])
+    for p in out.values():
+        p["all"] = len(p["watches"]) == users.get(p["source"], 0)
+    return list(out.values())
 
 
 class App:
@@ -44,17 +71,31 @@ class App:
     # —— 读 ——
     def state(self) -> dict:
         cfg = self.cfgstore.load()
+        net.set_proxy(cfg["proxy"])   # 刚启动、第一轮还没跑时，下面的「现在怎么连」也要准
         m = self.monitor
+        statuses = self.store.statuses()
         return {
             "app": APP_NAME, "version": __version__,
             "config": cfg,
-            "sources": [{"key": k, "name": SOURCES[k].name, "home": SOURCES[k].home} for k in ALL_SOURCES],
+            "message_layout": message_layout.schema(),
+            "sources": [{"key": k, "name": SOURCES[k].name, "home": SOURCES[k].home, "currency": SOURCES[k].currency,
+                         "login": SOURCES[k].login, "ready": SOURCES[k].ready()} for k in ALL_SOURCES],
+            # 关注页上点网站名，直接去那个网站看同一个搜索
+            "links": {w["id"]: {k: SOURCES[k].search_url(query_of(w)) for k in w["sources"] if k in SOURCES}
+                      for w in cfg["watches"] if w["keyword"]},
             "channel_types": {k: {"label": v[0], "fields": [
-                {"key": f[0], "label": f[1], "hint": f[2], "required": f[3], "kind": f[4] if len(f) > 4 else "text"}
-                for f in v[1]]}
+                {"key": f[0], "label": f[1], "hint": f[2], "required": f[3], "kind": f[4] if len(f) > 4 else "text",
+                 "default": f[5] if len(f) > 5 else True}
+                for f in v[1]], "guide": ({"url": notify.CHANNEL_GUIDES[k][0], "text": notify.CHANNEL_GUIDES[k][1]}
+                                         if k in notify.CHANNEL_GUIDES else None)}
                 for k, v in notify.CHANNEL_TYPES.items()},
-            "status": self.store.statuses(),
-            "monitor": {"busy": m.busy, "last_cycle_at": int(m.last_cycle_at),
+            "status": statuses,
+            "problems": problems(cfg, statuses),
+            "stats": self.store.watch_stats(),
+            "net": {**net.proxy_info(), "local": m.proxy_hint},
+            "xianyu": xianyu_account.state(),
+            "monitor": {"busy": m.busy, "live": m.live, "period": m.period or estimate_period(cfg),
+                        "last_check_at": int(m.last_check_at), "last_cycle_at": int(m.last_cycle_at),
                         "next_cycle_at": int(m.next_cycle_at), "now": int(time.time())},
             "rate": m.rate(cfg, fetch=False),
             "logs": list(m.logs)[-60:],
@@ -101,7 +142,7 @@ class App:
         return {}
 
     def save_settings(self, body: dict) -> dict:
-        allowed = ("interval", "request_gap", "proxy", "jpy_to_cny", "auto_rate")
+        allowed = ("interval", "request_gap", "proxy", "jpy_to_cny", "auto_rate", "buy")
 
         def fn(cfg):
             for k in allowed:
@@ -109,6 +150,8 @@ class App:
                     cfg[k] = body[k]
         cfg = self.cfgstore.update(fn)
         net.set_proxy(cfg["proxy"])
+        if "proxy" in body:
+            self.monitor.proxy_hint = ""
         if "auto_rate" in body or "jpy_to_cny" in body:
             self.store.kv_set("rate_at", "0")
         return {}
@@ -117,13 +160,13 @@ class App:
         ch = normalize_channel(body)
         if ch["type"] not in notify.CHANNEL_TYPES:
             raise ValueError("不认识的推送方式")
-        missing = notify.missing_fields(ch)
-        if missing:
-            raise ValueError(f"没填：{'、'.join(missing)}")
+        notify.validate_channel(ch)
 
         def fn(cfg):
             for i, c in enumerate(cfg["channels"]):
                 if c["id"] == ch["id"]:
+                    if "message" not in body and "message" in c:
+                        ch["message"] = copy.deepcopy(c["message"])
                     cfg["channels"][i] = ch
                     break
             else:
@@ -149,6 +192,85 @@ class App:
         notify.send(ch, hits, ctx)
         page = "，点开应该是推送页" if ctx.page_url else ""
         return {"message": f"已发送（{where}{page}），去看看收到没有"}
+
+    def save_message(self, body: dict) -> dict:
+        """单独保存布局，避免覆盖正在编辑的渠道凭据或关注。"""
+        cid = str(body.get("channel_id") or "")
+        value = body.get("message")
+        if not body.get("inherit") and not isinstance(value, dict):
+            raise ValueError("消息布局格式不对")
+        layout = message_layout.normalize(value)
+        if not body.get("inherit") and layout["enabled"] and not layout["blocks"]:
+            raise ValueError("至少选一个消息模块，或关闭自定义布局")
+
+        def fn(cfg):
+            if not cid:
+                cfg["message"] = None if body.get("inherit") else layout
+                return
+            ch = next((c for c in cfg["channels"] if c["id"] == cid), None)
+            if ch is None:
+                raise ValueError("这个渠道已被删除，请刷新后重选")
+            if body.get("inherit"):
+                ch.pop("message", None)
+            else:
+                ch["message"] = layout
+        self.cfgstore.update(fn)
+        return {"saved": True}
+
+    def preview_message(self, body: dict) -> dict:
+        """只读已有商品；不搜索、不发推送、不写入推送页。"""
+        cfg = self.cfgstore.load()
+        cid = str(body.get("channel_id") or "")
+        ch = next((c for c in cfg["channels"] if c["id"] == cid), None)
+        if cid and ch is None:
+            raise ValueError("这个渠道已被删除，请刷新后重选")
+        kind = ch["type"] if ch else body.get("type", "wxpusher")
+        if kind not in notify.CHANNEL_TYPES:
+            raise ValueError("不认识的推送方式")
+        value = body.get("message", ch.get("message", cfg.get("message")) if ch else cfg.get("message"))
+        if body.get("inherit") and ch:
+            value = cfg.get("message")
+        layout = message_layout.normalize(value)
+        active = layout if layout and layout["enabled"] else None
+        mode = body.get("sample", "latest")
+        if mode not in ("latest", "example", "drop", "xianyu"):
+            raise ValueError("不认识的示例商品")
+        rows = self.store.feed(limit=1)
+        row = rows[0] if rows else None
+        example_image = row["image"] if row and row.get("image") else ""
+        if mode == "latest" and row:
+            it = Item(source=row["source"], id=row["item_id"], title=row["title"], price=row["price"],
+                      url=row["url"], image=row["image"], extra=row["extra"])
+            hit = notify.Hit(it, row["watch_id"], row["watch_name"], row["kind"], row["old_price"])
+            sample_label = "最近发现的商品"
+        else:
+            xianyu = mode == "xianyu"
+            it = Item(source="xianyu" if xianyu else "mercari", id="1234567890" if xianyu else "m12345678901",
+                      title="五条悟 缶バッジ · 未拆封徽章套装", price=88 if xianyu else 1500,
+                      url="https://www.goofish.com/item?id=1234567890" if xianyu else "https://jp.mercari.com/item/m12345678901",
+                      image=example_image, extra="未拆封 · 包邮", created=int(time.time()) - 3600)
+            hit = notify.Hit(it, "example", "五条悟周边", "drop" if mode == "drop" else "new",
+                             2000 if mode == "drop" else None)
+            sample_label = "闲鱼示例" if xianyu else "降价示例" if mode == "drop" else "日站示例"
+        base = access.phone_base(cfg)
+        ctx = notify.Ctx(rate=self.monitor.rate(cfg, fetch=False), buy=cfg["buy"], web_url=base,
+                         page_url=f"{base}/p/preview" if base and cfg["web"]["push_page"] else "",
+                         message=active, channel_kind=kind,
+                         queries={w["id"]: query_of(w) for w in cfg["watches"]},
+                         keywords={**{w["id"]: w["keyword"] for w in cfg["watches"]}, "example": "五条悟 缶バッジ"})
+        if active:
+            visual = notify._message_body(hit, ctx, 0, "html")
+            warnings = message_layout.warnings(active, kind, bool(base and cfg["web"]["push_page"]))
+        else:
+            visual = notify._wxpusher_item(hit, ctx, 0) if kind == "wxpusher" else notify.html_list([hit], ctx)
+            warnings = ["当前使用渠道原有格式；选择任意预设或模块即可开始自定义。"]
+        if not it.image:
+            warnings.append("示例没有配图；真实商品有图时会自动展示所选的配图模块。")
+        if mode != "latest" or not row:
+            warnings.append("这是示例商品，图片借用最近商品；不会发送通知。" if example_image else "这是示例商品，不会发送通知。")
+        return {"html": visual, "text": notify.plain_lines([hit], ctx), "title": notify.summary_title([hit], ctx),
+                "target": notify.link(hit, ctx, 0), "warnings": warnings, "sample_label": sample_label,
+                "capabilities": message_layout.CAPABILITIES[kind], "custom": bool(active)}
 
     def save_access(self, body: dict) -> dict:
         """「手机访问」：局域网开关、手机用的地址、推送点开去哪。对外开放了就必须有口令。"""
@@ -185,12 +307,15 @@ class App:
         if not body.get("apply"):
             text, changes = migrate.run(path, data_dir, store=self.store, cfgstore=self.cfgstore)
             return {"report": text, "changes": changes}
-        if not self.monitor._cycle_lock.acquire(timeout=90):
-            raise ValueError("正在扫描，过一会儿再试")
         try:
-            text, _ = migrate.run(path, data_dir, apply=True, store=self.store, cfgstore=self.cfgstore)
-        finally:
-            self.monitor._cycle_lock.release()
+            with self.monitor.paused(90):
+                cookies_before = self.store.kv_get(KV_COOKIES)
+                text, _ = migrate.run(path, data_dir, apply=True, store=self.store, cfgstore=self.cfgstore)
+                if self.store.kv_get(KV_COOKIES) != cookies_before:
+                    xianyu_account.attach(self.store)
+        except TimeoutError:
+            raise ValueError("正在扫描，过一会儿再试") from None
+        self.monitor.trigger()
         return {"report": text, "applied": True}
 
     def preview(self, body: dict) -> dict:
@@ -202,10 +327,12 @@ class App:
         src = SOURCES.get(key)
         if src is None:
             raise ValueError("不认识的网站")
-        net.set_proxy(self.cfgstore.load()["proxy"])
+        cfg = self.cfgstore.load()
+        net.set_proxy(cfg["proxy"])
         with src.lock:
             items = src.search(query_of(watch))
-        return {"items": [dict(it.to_dict(), passes=passes(watch, it)) for it in items[:60]],
+        rate = self.monitor.rate(cfg, fetch=False)
+        return {"items": [dict(it.to_dict(), passes=passes(watch, it, rate)) for it in items[:60]],
                 "total": len(items)}
 
     def scan(self, body: dict) -> dict:
@@ -274,15 +401,70 @@ class App:
         self.store.clear_feed()
         return {}
 
+    # —— 闲鱼账号 ——
+    def xianyu_qr(self, body: dict) -> dict:
+        return {"code": xianyu_account.qr_start()}
+
+    def xianyu_poll(self, body: dict) -> dict:
+        r = xianyu_account.qr_poll()
+        if r["status"] == "done":
+            r.update(self._xianyu_ready())
+        return r
+
+    def xianyu_cookie(self, body: dict) -> dict:
+        xianyu_account.use_cookie_text(str(body.get("cookie") or ""))
+        return {"status": "done", **self._xianyu_ready()}
+
+    def _xianyu_ready(self) -> dict:
+        """刚登录好：拿第一个关注的关键词试搜一次，搜得了就马上扫一轮闲鱼。"""
+        cfg = self.cfgstore.load()
+        kw = next((w["keyword"] for w in cfg["watches"] if "xianyu" in w["sources"] and w["keyword"]),
+                  next((w["keyword"] for w in cfg["watches"] if w["keyword"]), "CD"))
+        src = SOURCES["xianyu"]
+        try:
+            with src.lock:
+                items = src.search(Query(kw))
+            check, ok = f"试搜了一下「{kw}」，搜到 {len(items)} 件，能用了", True
+        except Exception as e:
+            check, ok = f"登录好了，但试搜「{kw}」没成功：{e}", False
+        finally:
+            self.monitor._last_request["xianyu"] = time.time()
+        self.monitor.rescan_source("xianyu")
+        return {"check": check, "check_ok": ok, **xianyu_account.state()}
+
+    def xianyu_cancel(self, body: dict) -> dict:
+        xianyu_account.qr_cancel()
+        return {}
+
+    def xianyu_logout(self, body: dict) -> dict:
+        xianyu_account.logout()
+        return {}
+
+    def xianyu_add(self, body: dict) -> dict:
+        """登录好以后，一键把闲鱼加进所有关注。"""
+        added = []
+
+        def fn(cfg):
+            for w in cfg["watches"]:
+                if "xianyu" not in w["sources"]:
+                    w["sources"].append("xianyu")
+                    added.append(w["name"])
+        self.cfgstore.update(fn)
+        self.monitor.rescan_source("xianyu")
+        return {"added": len(added)}
+
 
 POSTS = {
     "/api/watch": "save_watch", "/api/watch/delete": "delete_watch",
     "/api/settings": "save_settings",
     "/api/channel": "save_channel", "/api/channel/delete": "delete_channel",
     "/api/channel/test": "test_channel",
+    "/api/message/settings": "save_message", "/api/message/preview": "preview_message",
     "/api/preview": "preview", "/api/scan": "scan", "/api/feed/clear": "clear_feed",
     "/api/access": "save_access", "/api/migrate": "migrate",
     "/api/block": "block", "/api/unblock": "unblock", "/api/blocked/clear": "clear_blocked",
+    "/api/xianyu/qr": "xianyu_qr", "/api/xianyu/poll": "xianyu_poll", "/api/xianyu/cookie": "xianyu_cookie",
+    "/api/xianyu/cancel": "xianyu_cancel", "/api/xianyu/logout": "xianyu_logout", "/api/xianyu/add": "xianyu_add",
 }
 
 
@@ -374,6 +556,10 @@ def make_handler(app: App):
                 return self._json(401, {"error": "需要口令"})
             if url.path in ("/", "/index.html"):
                 return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
+            assets = {"/static/message-designer.js": "text/javascript; charset=utf-8",
+                      "/static/message-designer.css": "text/css; charset=utf-8"}
+            if url.path in assets:
+                return self._send(200, (STATIC / url.path.rsplit("/", 1)[1]).read_bytes(), assets[url.path])
             try:
                 if url.path == "/api/state":
                     return self._json(200, app.state())

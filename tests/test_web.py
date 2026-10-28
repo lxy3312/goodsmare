@@ -51,7 +51,8 @@ class WebTests(unittest.TestCase):
         self.assertIn("goodsmare".encode(), body)
         status, state = self.req("GET", "/api/state")
         self.assertEqual(status, 200)
-        self.assertEqual(len(state["sources"]), 7)
+        self.assertEqual([s["key"] for s in state["sources"]], ALL_SOURCES)
+        self.assertEqual({s["key"]: s["currency"] for s in state["sources"]}["xianyu"], "CNY")
         self.assertIn("serverchan", state["channel_types"])
 
     def test_page_has_a_color_for_every_source(self):
@@ -84,12 +85,138 @@ class WebTests(unittest.TestCase):
         status, body = self.req("POST", "/api/channel", {"type": "bark"})
         self.assertEqual(status, 400)
 
+    def test_new_channel_forms_are_exposed_with_setup_guides(self):
+        from tests.test_notify_extra import NEW_CHANNELS
+
+        _, state = self.req("GET", "/api/state")
+        for kind in NEW_CHANNELS:
+            with self.subTest(kind=kind):
+                form = state["channel_types"][kind]
+                self.assertTrue(form["fields"])
+                self.assertTrue(form["guide"]["url"].startswith("https://"))
+                self.assertTrue(form["guide"]["text"])
+
+    def test_new_channels_can_be_saved_and_tested_from_the_web(self):
+        from tests.test_notify_extra import NEW_CHANNELS, response
+
+        self.add_feed("m1", "测试商品")
+
+        def post(url, **kwargs):
+            if "wxpusher" in url:
+                return response({"code": 1000})
+            if "xtuis" in url:
+                return response({"msg_id": "wx_test"})
+            if "iyuu" in url:
+                return response({"errcode": 0})
+            if "push.i-i.me" in url:
+                return response("success")
+            if "discord" in url:
+                return response({"id": "1"})
+            if "pushover" in url:
+                return response({"status": 1})
+            self.fail(f"unexpected URL: {url}")
+
+        with mock.patch("goodsmare.net.post", side_effect=post) as send:
+            for kind, fields in NEW_CHANNELS.items():
+                with self.subTest(kind=kind):
+                    status, channel = self.req("POST", "/api/channel", {"type": kind, **fields})
+                    self.assertEqual(status, 200, channel)
+                    status, result = self.req("POST", "/api/channel/test", {"id": channel["id"]})
+                    self.assertEqual(status, 200, result)
+                    self.assertIn("已发送", result["message"])
+            self.assertEqual(send.call_count, len(NEW_CHANNELS))
+        self.assertEqual({c["type"] for c in self.cfg.load()["channels"]}, set(NEW_CHANNELS))
+
+    def test_bad_wxpusher_targets_are_rejected_when_saving(self):
+        for fields in ({"token": "AT_test"}, {"token": "AT_test", "topic_ids": "not-a-number"}):
+            with self.subTest(fields=fields):
+                status, result = self.req("POST", "/api/channel", {"type": "wxpusher", **fields})
+                self.assertEqual(status, 400, result)
+                self.assertIn("WxPusher", result["error"])
+        self.assertEqual(self.cfg.load()["channels"], [])
+
     def test_settings(self):
-        self.req("POST", "/api/settings", {"interval": 5, "proxy": " 127.0.0.1:7890 ", "evil": 1})
+        self.req("POST", "/api/settings", {"interval": 5, "proxy": " 127.0.0.1:7890 ", "evil": 1, "buy": "doorzo"})
         cfg = self.cfg.load()
-        self.assertEqual(cfg["interval"], 30)     # 有下限
+        self.assertEqual(cfg["interval"], 10)     # 有下限
+        self.assertEqual(cfg["buy"], "doorzo")
+        self.req("POST", "/api/settings", {"buy": "nope"})
+        self.assertEqual(self.cfg.load()["buy"], "")
         self.assertEqual(cfg["proxy"], "127.0.0.1:7890")
         self.assertNotIn("evil", cfg)
+
+    def test_message_schema_and_static_assets(self):
+        _, state = self.req("GET", "/api/state")
+        self.assertEqual(len(state["message_layout"]["blocks"]), 24)
+        self.assertEqual(set(state["message_layout"]["capabilities"]), set(state["channel_types"]))
+        for filename in ("message-designer.js", "message-designer.css"):
+            self.assertEqual(self.req("GET", "/static/" + filename)[0], 200)
+        self.assertEqual(self.req("GET", "/static/../config.py")[0], 404)
+        self.cfg.update(lambda c: c["web"].update({"token":"secret"}))
+        self.assertEqual(self.req("GET", "/static/message-designer.js")[0], 401)
+
+    def test_message_save_preserves_channel_credentials_and_other_config(self):
+        _, ch = self.req("POST", "/api/channel", {"type":"wxpusher","token":"SPT_secret","name":"我的渠道"})
+        original = self.cfg.load()
+        status, result = self.req("POST", "/api/message/settings", {"message":{"blocks":["title","price"]}})
+        self.assertEqual(status, 200, result)
+        self.assertEqual(self.cfg.load()["channels"], original["channels"])
+        status, result = self.req("POST", "/api/message/settings", {"channel_id":ch["id"],"message":{"blocks":["note"],"note":"自定义"}})
+        self.assertEqual(status, 200, result)
+        saved = self.cfg.load()
+        self.assertEqual(saved["channels"][0]["token"], "SPT_secret")
+        self.assertEqual(saved["channels"][0]["message"]["blocks"], ["note"])
+        self.assertEqual(saved["watches"], original["watches"])
+        self.assertEqual(saved["message"]["blocks"], ["title","price"])
+        self.assertNotIn("SPT_secret", json.dumps(result))
+        # 修改接收渠道的表单不带布局字段，也必须保留独立布局。
+        self.req("POST", "/api/channel", {**ch,"name":"改名"})
+        self.assertEqual(self.cfg.load()["channels"][0]["message"], saved["channels"][0]["message"])
+        self.req("POST", "/api/message/settings", {"channel_id":ch["id"],"inherit":True})
+        self.assertNotIn("message", self.cfg.load()["channels"][0])
+
+    def test_message_rejects_empty_enabled_layout_and_missing_channel(self):
+        before = self.cfg.load()
+        for body in ({"message":{"blocks":[]}}, {"message":"bad"},
+                     {"channel_id":"missing","message":{"blocks":["title"]}}):
+            status, _ = self.req("POST", "/api/message/settings", body)
+            self.assertEqual(status, 400, body)
+            self.assertEqual(self.cfg.load(), before)
+        self.assertEqual(self.req("POST", "/api/message/settings", {"message":{"enabled":False,"blocks":[]}})[0],200)
+
+    def test_message_preview_has_no_network_sends_config_or_page_writes(self):
+        self.add_feed("m123", "真实商品 <script>oops</script>")
+        before = self.cfg.load()
+        with mock.patch("goodsmare.net.post", side_effect=AssertionError("preview must not send")), \
+             mock.patch("goodsmare.net.get", side_effect=AssertionError("preview must not fetch")), \
+             mock.patch.object(self.mon, "ctx", side_effect=AssertionError("preview must not create pages")), \
+             mock.patch.object(self.store, "add_page", side_effect=AssertionError("preview must not write pages")):
+            status, data = self.req("POST", "/api/message/preview", {"message":{"blocks":["title","price","copy_original"]}})
+            self.assertEqual(status,200,data)
+            self.assertIn("真实商品",data["html"])
+            self.assertNotIn("<script>",data["html"])
+            self.assertIn("<copy ",data["html"])
+            self.assertEqual(data["sample_label"],"最近发现的商品")
+            for sample in ("example","drop","xianyu"):
+                status, data = self.req("POST", "/api/message/preview", {"sample":sample,"type":"feishu","message":{"blocks":["price","cny","drop","buy_button"]}})
+                self.assertEqual(status,200,data)
+                if sample == "drop": self.assertIn("25%",data["text"])
+                if sample == "xianyu":
+                    self.assertIn("88元",data["text"])
+                    self.assertNotIn("去任意门",data["html"])
+        self.assertEqual(self.cfg.load(),before)
+        self.assertEqual(len(self.store.feed()),1)
+
+    def test_message_preview_channel_override_and_inherit(self):
+        _, ch = self.req("POST", "/api/channel", {"type":"wxpusher","token":"SPT_secret","message":{"blocks":["note"],"note":"渠道独立"}})
+        self.req("POST", "/api/message/settings", {"message":{"blocks":["note"],"note":"全局内容"}})
+        _, data = self.req("POST", "/api/message/preview", {"channel_id":ch["id"]})
+        self.assertIn("渠道独立",data["html"])
+        self.assertNotIn("全局内容",data["html"])
+        _, data = self.req("POST", "/api/message/preview", {"channel_id":ch["id"],"inherit":True})
+        self.assertIn("全局内容",data["html"])
+        self.assertNotIn("SPT_secret",json.dumps(data))
+        self.assertEqual(self.req("POST", "/api/message/preview", {"channel_id":"missing"})[0],400)
 
     def test_rejects_foreign_host_and_non_json(self):
         status, _ = self.req("GET", "/api/state", headers={"Host": "evil.example:80"})
@@ -196,6 +323,28 @@ class WebTests(unittest.TestCase):
         self.store.add_feed(Hit(Item(source="mercari", id=item_id, title=title, price=1000,
                                      url=f"https://jp.mercari.com/item/{item_id}"), watch_id, name))
 
+    def test_migrate_activates_the_imported_xianyu_account(self):
+        from goodsmare.sources import xianyu
+
+        old = Path(self.tmp.name) / "old" / "data"
+        old.mkdir(parents=True)
+        st = Store(old / "goodsmare.db")
+        try:
+            acc = xianyu.Account()
+            acc.attach(st)
+            acc.use_cookie_text("unb=3300; tracknick=imported")
+        finally:
+            st.db.close()
+        self.assertFalse(xianyu.account.logged_in())
+        self.mon._wake.clear()
+        status, body = self.req("POST", "/api/migrate", {"path": str(old.parent), "apply": True})
+        self.assertEqual(status, 200, body)
+        _, state = self.req("GET", "/api/state")
+        self.assertTrue(state["xianyu"]["logged_in"], "迁移完成后不用重启就能用闲鱼")
+        self.assertEqual(state["xianyu"]["nick"], "imported")
+        self.assertTrue(next(s for s in state["sources"] if s["key"] == "xianyu")["ready"])
+        self.assertTrue(self.mon._wake.is_set(), "迁移完成后马上唤醒扫描")
+
     def test_block_items_and_words(self):
         self.cfg.update(lambda c: c.update({"watches": [
             {"id": "w1", "name": "ミドリ cd", "keyword": "ミドリ cd", "exclude": ["まとめ売り"]},
@@ -256,6 +405,71 @@ class WebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         status, _ = self.req("GET", "/?token=s3cret")
         self.assertEqual(status, 302)
+
+
+    def test_problems_are_grouped(self):
+        self.cfg.update(lambda c: c.update({"watches": [
+            {"id": "w1", "name": "甲", "keyword": "ミドリ cd", "sources": ["mercari", "surugaya", "yahoo_flea"]},
+            {"id": "w2", "name": "乙", "keyword": "b", "sources": ["mercari", "surugaya"]},
+            {"id": "w3", "name": "丙", "keyword": "c", "sources": ["mercari"], "enabled": False}]}))
+        for wid in ("w1", "w2", "w3"):
+            self.store.set_status(wid, "mercari", False, 0, "连不上 api.mercari.jp（超时）", "net")
+        self.store.set_status("w1", "surugaya", False, 0, "骏河屋 拦下了请求（HTTP 403）", "blocked")
+        self.store.set_status("w2", "surugaya", True, 10, "本次 10 件，新的 0 件")
+        # 旧版记下的状态没有 kind，看字猜
+        self.store.set_status("w1", "yahoo_flea", False, 0, "连不上 paypayfleamarket.yahoo.co.jp：timed out")
+        _, state = self.req("GET", "/api/state")
+        probs = {(p["source"], p["kind"]): p for p in state["problems"]}
+        self.assertEqual(set(probs), {("mercari", "net"), ("surugaya", "blocked"), ("yahoo_flea", "net")})
+        self.assertEqual(probs[("mercari", "net")]["watches"], ["甲", "乙"])   # 暂停的关注不算
+        self.assertTrue(probs[("mercari", "net")]["all"])
+        self.assertEqual((probs[("surugaya", "blocked")]["watches"], probs[("surugaya", "blocked")]["all"]), (["甲"], False))
+        self.assertIn("keyword=%E3%83%9F%E3%83%89%E3%83%AA", state["links"]["w1"]["mercari"])
+        self.assertEqual(set(state["links"]["w1"]), {"mercari", "surugaya", "yahoo_flea"})
+        self.assertIn(state["net"]["mode"], ("app", "system", "direct"))
+        self.assertFalse(state["xianyu"]["logged_in"])
+
+    def test_use_proxy(self):
+        self.mon.proxy_hint = "http://127.0.0.1:7890"
+        try:
+            status, _ = self.req("POST", "/api/settings", {"proxy": "http://127.0.0.1:7890"})
+            self.assertEqual(status, 200)
+            self.assertEqual(self.cfg.load()["proxy"], "http://127.0.0.1:7890")
+            self.assertEqual(self.mon.proxy_hint, "")
+            _, state = self.req("GET", "/api/state")
+            self.assertEqual(state["net"], {"mode": "app", "proxy": "http://127.0.0.1:7890", "local": ""})
+        finally:
+            self.req("POST", "/api/settings", {"proxy": ""})
+
+    def test_xianyu_login_flow(self):
+        from goodsmare.sources import SOURCES
+        self.cfg.update(lambda c: c.update({"watches": [
+            {"id": "w1", "keyword": "GYBE", "sources": ["mercari"]},
+            {"id": "w2", "keyword": "黑胶", "sources": ["mercari", "xianyu"]}]}))
+        fake = mock.Mock()
+        fake.qr_start.return_value = "https://passport.goofish.com/qrcodeCheck.htm?lgToken=x"
+        fake.qr_poll.side_effect = [{"status": "new"}, {"status": "done"}]
+        fake.state.return_value = {"logged_in": True, "nick": "tb88", "at": 1, "scanning": False}
+        found = [Item(source="xianyu", id="1", title="黑胶", price=380, url="https://www.goofish.com/item?id=1")]
+        with mock.patch("goodsmare.web.xianyu_account", fake), \
+                mock.patch.object(SOURCES["xianyu"], "search", return_value=found) as search:
+            _, d = self.req("POST", "/api/xianyu/qr", {})
+            self.assertIn("qrcodeCheck", d["code"])
+            _, d = self.req("POST", "/api/xianyu/poll", {})
+            self.assertEqual(d["status"], "new")
+            self.mon._wake.clear()
+            _, d = self.req("POST", "/api/xianyu/poll", {})
+        self.assertEqual((d["status"], d["check_ok"], d["nick"]), ("done", True, "tb88"))
+        self.assertEqual(search.call_args[0][0].keyword, "黑胶")   # 拿搜闲鱼的那个关注的关键词试搜
+        self.assertTrue(self.mon._wake.is_set())                     # 马上扫一轮
+        _, d = self.req("POST", "/api/xianyu/add", {})
+        self.assertEqual(d["added"], 1)
+        self.assertEqual([w["sources"] for w in self.cfg.load()["watches"]], [["mercari", "xianyu"]] * 2)
+
+    def test_xianyu_cookie_needs_login_info(self):
+        status, d = self.req("POST", "/api/xianyu/cookie", {"cookie": "cna=1; cookie2=2"})
+        self.assertEqual(status, 400)
+        self.assertIn("unb", d["error"])
 
 
 if __name__ == "__main__":

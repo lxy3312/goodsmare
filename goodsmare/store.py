@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS feed (
 CREATE INDEX IF NOT EXISTS feed_item ON feed (source, item_id);
 CREATE TABLE IF NOT EXISTS status (
     watch_id TEXT, source TEXT, checked_at INTEGER, ok INTEGER, count INTEGER, message TEXT,
+    kind TEXT DEFAULT '',
     PRIMARY KEY (watch_id, source)
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
@@ -53,6 +54,9 @@ class Store:
         with self._lock:
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.executescript(SCHEMA)
+            # 0.3 及以前的 status 表没有 kind（出错的类别：net 连不上、blocked 被拦、login 要登录……）
+            if "kind" not in {r[1] for r in self.db.execute("PRAGMA table_info(status)")}:
+                self.db.execute("ALTER TABLE status ADD COLUMN kind TEXT DEFAULT ''")
             self.db.commit()
 
     # —— 基线：某个关注在某个站第一次扫描时，只记下现有商品，不推送 ——
@@ -169,10 +173,10 @@ class Store:
             self.db.commit()
 
     # —— 状态 ——
-    def set_status(self, watch_id: str, source: str, ok: bool, count: int, message: str) -> None:
+    def set_status(self, watch_id: str, source: str, ok: bool, count: int, message: str, kind: str = "") -> None:
         with self._lock:
-            self.db.execute("INSERT OR REPLACE INTO status VALUES (?,?,?,?,?,?)",
-                            (watch_id, source, int(time.time()), int(ok), count, message))
+            self.db.execute("INSERT OR REPLACE INTO status (watch_id, source, checked_at, ok, count, message, kind) "
+                            "VALUES (?,?,?,?,?,?,?)", (watch_id, source, int(time.time()), int(ok), count, message, kind))
             self.db.commit()
 
     def statuses(self) -> dict:
@@ -181,8 +185,33 @@ class Store:
             for r in self.db.execute("SELECT * FROM status"):
                 out.setdefault(r["watch_id"], {})[r["source"]] = {
                     "checked_at": r["checked_at"], "ok": bool(r["ok"]),
-                    "count": r["count"], "message": r["message"]}
+                    "count": r["count"], "message": r["message"], "kind": r["kind"] or ""}
         return out
+
+    def status_of(self, watch_id: str, source: str) -> dict | None:
+        """这个关注在这个网站上次查的结果（主要是什么时候查的）。"""
+        with self._lock:
+            r = self.db.execute("SELECT checked_at, ok FROM status WHERE watch_id=? AND source=?",
+                                (watch_id, source)).fetchone()
+        return {"checked_at": r["checked_at"] or 0, "ok": bool(r["ok"])} if r else None
+
+    def relisted(self, watch_id: str, source: str, title: str, price, days: int = 7) -> bool:
+        """同一个关注、同一个网站，几天内推过标题和价格都一样的：多半是卖家删了重新上架。"""
+        since = int(time.time()) - days * 86400
+        with self._lock:
+            r = self.db.execute("SELECT 1 FROM feed WHERE watch_id=? AND source=? AND title=? AND price IS ? "
+                                "AND found_at >= ? LIMIT 1", (watch_id, source, title, price, since)).fetchone()
+        return r is not None
+
+    def watch_stats(self, days: int = 7) -> dict:
+        """每个关注：最近 days 天上新（含降价）几件、最近一件是什么时候。屏蔽的不算。"""
+        since = int(time.time()) - days * 86400
+        with self._lock:
+            rows = self.db.execute(
+                "SELECT watch_id, SUM(found_at >= ?) AS recent, MAX(found_at) AS last FROM feed "
+                "WHERE NOT EXISTS (SELECT 1 FROM blocked b WHERE b.source = feed.source AND b.item_id = feed.item_id) "
+                "GROUP BY watch_id", (since,)).fetchall()
+        return {r["watch_id"]: {"recent": r["recent"] or 0, "last": r["last"] or 0} for r in rows}
 
     def forget_watch(self, watch_id: str) -> None:
         with self._lock:

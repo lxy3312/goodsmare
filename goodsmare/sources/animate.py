@@ -15,12 +15,15 @@ import re
 
 from .. import net
 from ..htmlparse import parse
-from .base import Item, NoResults, Query, Source, generic_items, img_src, parse_yen
+from .base import Item, NoResults, Query, Source, generic_items, img_src, parse_yen, with_params
 
 SEARCH = "https://www.animate-onlineshop.jp/products/list.php"
 BASE = "https://www.animate-onlineshop.jp/"
 LINK = re.compile(r"/pd/(\d+)/")
 EMPTY = ("に関する商品は0件",)
+# 2026 年 10 月起，有时先给一张「要开 JavaScript 和 cookie」的检查页，由页面脚本跳去排队系统再回来。
+# 这是网站拦自动访问的，不去绕它，照实报「被拦了」
+GATE = ("cookietest=", "JavaScriptを有効にする必要があります")
 # 販売状況里表示买不到的几种写法（能买的有：予約受付中、在庫あり、残りわずか、取り寄せ、通常1～2日以内に入荷）
 GONE = ("終了", "在庫なし", "在庫切れ", "品切れ", "完売")
 
@@ -34,13 +37,22 @@ class Animate(Source):
     name = "animate"
     home = BASE
 
+    @staticmethod
+    def params(q: Query) -> dict:
+        return {"smt": q.keyword, "ss": 5, "sl": 100, "nf": 1, "nd[]": 7}
+
+    def search_url(self, q: Query) -> str:
+        return with_params(SEARCH, self.params(q))
+
     def search(self, q: Query) -> list[Item]:
-        params = {"smt": q.keyword, "ss": 5, "sl": 100, "nf": 1, "nd[]": 7}
-        html = net.get(SEARCH, params=params).check("animate").text()
+        html = net.get(SEARCH, params=self.params(q)).check("animate").text()
         return self.parse(html)
 
     @staticmethod
     def parse(html: str) -> list[Item]:
+        if all(m in html for m in GATE) and "item_list" not in html:
+            raise net.Blocked("animate 现在要先在浏览器里过一道检查（开着 JavaScript 的排队、验证页），程序过不去，搜不了。"
+                              "可以先在关注里把 animate 去掉，过些天再试")
         root = parse(html)
         items: list[Item] = []
         seen: set[str] = set()

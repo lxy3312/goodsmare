@@ -34,7 +34,7 @@ from .sources import SOURCES
 from .store import Store
 
 DB_NAMES = ("goodsmare.db", "ritao.db")
-SETTINGS = ("interval", "request_gap", "proxy", "jpy_to_cny", "auto_rate")
+SETTINGS = ("interval", "request_gap", "proxy", "jpy_to_cny", "auto_rate", "buy", "message")
 FEED_COLS = ("source", "item_id", "title", "price", "old_price", "url", "image", "extra",
              "watch_id", "watch_name", "kind", "found_at")
 
@@ -365,12 +365,14 @@ def check(pl: Plan, data_dir: Path) -> list[str]:
 
 
 LABELS = {"interval": "扫描间隔（秒）", "request_gap": "同站请求间隔（秒）", "proxy": "代理", "jpy_to_cny": "汇率",
-          "auto_rate": "自动汇率", "web.public_url": "手机访问地址", "web.push_page": "推送点开去推送页"}
+          "auto_rate": "自动汇率", "buy": "点开商品去哪", "message": "消息积木布局", "web.public_url": "手机访问地址", "web.push_page": "推送点开去推送页"}
 
 
 def _fmt(v) -> str:
     if isinstance(v, bool):
         return "开" if v else "关"
+    if isinstance(v, dict) and "blocks" in v:
+        return f"自定义 {len(v['blocks'])} 个模块" if v.get("enabled") else "渠道原有格式"
     return str(v) if v not in ("", None) else "空"
 
 

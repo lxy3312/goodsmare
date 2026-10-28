@@ -6,6 +6,8 @@ import gzip
 import http.cookiejar
 import json
 import re
+import socket
+import ssl
 import threading
 import time
 import urllib.error
@@ -20,20 +22,32 @@ UA = (
 )
 
 _lock = threading.Lock()
-_proxy = ""
-_proxy_handlers: list = []   # 空着就用 build_opener 默认的：读系统代理设置
-_opener = urllib.request.build_opener()
+_proxy = ""                  # 设置里填的代理（补全了 http://）；空着就跟系统代理走
+SYS_TTL = 10                 # 系统代理隔几秒重读一次
+_sys_cache: tuple | None = None
+# 直连连不上时，到本机这些端口找代理软件：Clash 7890、Clash Verge 7897、v2rayN 10809……
+LOCAL_PROXY_PORTS = (7890, 7897, 7891, 10809, 1087, 8889, 20171, 6152)
 
 # 调试用：设了目录就把每次响应原样存下来，页面改版时拿去对照。
 dump_dir: Path | None = None
 
 
 class FetchError(Exception):
-    pass
+    kind = "http"     # 给界面归类：net 连不上、blocked 被拦、http 其他 HTTP 错误、login 要登录
+
+
+class Unreachable(FetchError):
+    """连不上：超时、拒绝连接、域名解析失败。国内直连煤炉、雅虎拍卖这些就是这样。"""
+    kind = "net"
+
+    def __init__(self, msg: str, host: str = ""):
+        super().__init__(msg)
+        self.host = host
 
 
 class Blocked(FetchError):
     """对方返回了验证页 / 限流页，不是我们解析的问题。"""
+    kind = "blocked"
 
 
 class Response:
@@ -85,34 +99,111 @@ def _looks_blocked(head: str) -> bool:
 
 
 def set_proxy(proxy: str) -> None:
-    """proxy 为空时沿用系统环境变量（HTTPS_PROXY 等）。"""
-    global _proxy, _proxy_handlers, _opener
+    """设置里填的代理。空着就跟系统走：环境变量 HTTPS_PROXY 等，Windows、macOS 的系统代理设置。"""
+    global _proxy
     proxy = (proxy or "").strip()
+    if proxy and "://" not in proxy:
+        proxy = "http://" + proxy
     with _lock:
-        if proxy == _proxy:
-            return
         _proxy = proxy
-        if proxy:
-            if "://" not in proxy:
-                proxy = "http://" + proxy
-            _proxy_handlers = [urllib.request.ProxyHandler({"http": proxy, "https": proxy})]
-        else:
-            _proxy_handlers = []
-        _opener = urllib.request.build_opener(*_proxy_handlers)
 
 
-def _opener_for(cookies: http.cookiejar.CookieJar | None):
-    if cookies is None:
-        return _opener
+def system_proxies() -> dict:
+    """系统代理。Clash 之类的「系统代理」开关随时会拨，隔几秒重读一次：
+
+    只在启动时读的话，启动那会儿开关正好关着，之后就一直直连，煤炉、雅虎拍卖全都超时。
+    """
+    global _sys_cache
+    now = time.monotonic()
     with _lock:
-        handlers = list(_proxy_handlers)
-    return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies), *handlers)
+        if _sys_cache is not None and now - _sys_cache[0] < SYS_TTL:
+            return _sys_cache[1]
+    try:
+        found = urllib.request.getproxies()
+    except Exception:   # 读注册表、环境变量出了问题就当没有
+        found = {}
+    found = {k: v for k, v in found.items() if k in ("http", "https") and v}
+    with _lock:
+        _sys_cache = (now, found)
+    return found
+
+
+def _proxies() -> dict:
+    with _lock:
+        explicit = _proxy
+    return {"http": explicit, "https": explicit} if explicit else system_proxies()
+
+
+def proxy_info() -> dict:
+    """现在实际怎么连：app 设置里填的代理，system 系统代理，direct 直连。"""
+    with _lock:
+        explicit = _proxy
+    if explicit:
+        return {"mode": "app", "proxy": explicit}
+    found = system_proxies()
+    url = found.get("https") or found.get("http") or ""
+    return {"mode": "system", "proxy": url} if url else {"mode": "direct", "proxy": ""}
+
+
+def find_local_proxy(host: str) -> str:
+    """在本机常见端口上找一个能连到 host 的 HTTP 代理（发一个 CONNECT 试试），找不到返回空串。"""
+    for port in LOCAL_PROXY_PORTS:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.3) as s:
+                s.settimeout(5)
+                s.sendall(f"CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n".encode())
+                head = s.recv(256).decode("latin-1", "ignore")
+        except OSError:
+            continue
+        if re.match(r"HTTP/1\.[01] 200", head):
+            return f"http://127.0.0.1:{port}"
+    return ""
+
+
+def _opener_for(cookies: http.cookiejar.CookieJar | None, direct: bool):
+    handlers: list = [urllib.request.ProxyHandler({} if direct else _proxies())]
+    if cookies is not None:
+        handlers.append(urllib.request.HTTPCookieProcessor(cookies))
+    return urllib.request.build_opener(*handlers)
+
+
+def _reason(e: BaseException) -> str:
+    r = getattr(e, "reason", e)
+    if isinstance(r, (socket.timeout, TimeoutError)) or "timed out" in str(r):
+        return "超时"
+    if isinstance(r, ConnectionRefusedError):
+        return "连接被拒绝"
+    if isinstance(r, ConnectionResetError):
+        return "连接被重置"
+    if isinstance(r, socket.gaierror):
+        return "域名解析失败"
+    if isinstance(r, ssl.SSLError):
+        return "加密连接失败"
+    m = re.search(r"Tunnel connection failed: (\d+)", str(r))
+    if m:
+        return f"代理转发失败，HTTP {m.group(1)}"
+    return str(r) or type(r).__name__
+
+
+def _unreachable(e: BaseException, url: str, direct: bool) -> Unreachable:
+    parts = urllib.parse.urlsplit(url)
+    via = "" if direct else _proxies().get(parts.scheme, "")
+    reason = _reason(e)
+    if via and isinstance(getattr(e, "reason", e), ConnectionRefusedError):
+        msg = f"代理 {via} 连不上（连接被拒绝），代理软件开着吗"
+    else:
+        msg = f"连不上 {parts.netloc}（{reason}）"
+    return Unreachable(msg, parts.hostname or "")
 
 
 def request(method: str, url: str, *, params: dict | None = None, headers: dict | None = None,
             json_body=None, data: bytes | dict | None = None, timeout: float = 20,
-            retries: int = 1, cookies: http.cookiejar.CookieJar | None = None) -> Response:
-    """cookies：要记住 cookie 的网站自己带一个 CookieJar 来，别的网站照旧不存。"""
+            retries: int = 1, cookies: http.cookiejar.CookieJar | None = None,
+            direct: bool = False) -> Response:
+    """cookies：要记住 cookie 的网站自己带一个 CookieJar 来，别的网站照旧不存。
+
+    direct：不走代理（闲鱼这种国内网站，登录态别从国外节点出去）。
+    """
     if params:
         clean = {k: v for k, v in params.items() if v is not None and v != ""}
         url += ("&" if "?" in url else "?") + urllib.parse.urlencode(clean)
@@ -135,7 +226,7 @@ def request(method: str, url: str, *, params: dict | None = None, headers: dict 
         body = data
 
     last_err: Exception | None = None
-    opener = _opener_for(cookies)
+    opener = _opener_for(cookies, direct)
     for attempt in range(retries + 1):
         req = urllib.request.Request(url, data=body, headers=hdrs, method=method)
         try:
@@ -150,8 +241,7 @@ def request(method: str, url: str, *, params: dict | None = None, headers: dict 
             if attempt < retries:
                 time.sleep(1.5 * (attempt + 1))
                 continue
-            reason = getattr(e, "reason", e)
-            raise FetchError(f"连不上 {urllib.parse.urlsplit(url).netloc}：{reason}") from e
+            raise _unreachable(e, url, direct) from e
         _dump(url, result)
         if result.status >= 500 and attempt < retries:
             time.sleep(1.5 * (attempt + 1))

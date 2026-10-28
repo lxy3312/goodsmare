@@ -15,12 +15,13 @@ import urllib.parse
 
 from .. import net
 from ..htmlparse import Node, parse
-from .base import Item, NoResults, Query, Source, generic_items, img_src, parse_yen
+from .base import Item, NoResults, Query, Source, generic_items, img_src, parse_yen, with_params
 
 SEARCH = "https://www.suruga-ya.jp/search"
 BASE = "https://www.suruga-ya.jp/"
 LINK = re.compile(r"suruga-ya\.jp/product/(?:detail|other)/([0-9A-Za-z-]+)")
-EMPTY = ("検索結果はありません", "該当する商品が見つかりませんでした", "に該当する商品はありません")
+EMPTY = ("検索結果はありません", "該当する商品が見つかりませんでした", "に該当する商品はありません",
+         "検索結果は０件です", "検索結果は0件です")
 NOT_PRICE = ("定価", "通常価格", "送料", "お買上金額", "手数料")
 
 
@@ -61,12 +62,21 @@ class Surugaya(Source):
     name = "骏河屋"
     home = BASE
     rev = 2   # 旧版会把运费说明、定价当成售价，存下的价格不能拿来判断降价
+    min_gap = 5.0   # 请求太密容易被拦，比别的站慢一点
+
+    @staticmethod
+    def params(q: Query) -> dict:
+        return {"category": "", "search_word": q.keyword, "rankBy": "modificationTime:descending", "inStock": "Off"}
+
+    def search_url(self, q: Query) -> str:
+        return with_params(SEARCH, self.params(q))
 
     def search(self, q: Query) -> list[Item]:
-        params = {"category": "", "search_word": q.keyword,
-                  "rankBy": "modificationTime:descending", "inStock": "Off"}
-        html = net.get(SEARCH, params=params).check("骏河屋").text()
-        return self.parse(html)
+        resp = net.get(SEARCH, params=self.params(q))
+        # 2026 年 10 月起，搜不到东西时回的是 404，页面上写「検索結果は０件です」
+        if resp.status == 404 and any(m in resp.text() for m in EMPTY):
+            return NoResults()
+        return self.parse(resp.check("骏河屋").text())
 
     @staticmethod
     def parse(html: str) -> list[Item]:

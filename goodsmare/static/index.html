@@ -9,6 +9,7 @@
 <!-- 商品图都是外链，不带 Referer 才不会被防盗链挡住 -->
 <meta name="referrer" content="no-referrer">
 <title>goodsmare</title>
+<link rel="stylesheet" href="/static/message-designer.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f6849f'/%3E%3Cstop offset='1' stop-color='%23d0346b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='30' fill='url(%23g)'/%3E%3Ccircle cx='32' cy='32' r='17' fill='none' stroke='white' stroke-width='4'/%3E%3Cpath d='M32 32 L51 18.6' stroke='white' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='32' r='5' fill='white'/%3E%3C/svg%3E">
 <style>
 /* —— 配色：浅色为主，跟随系统切深色 —— */
@@ -31,6 +32,7 @@
   /* 各网站的代表色：--s-* 是底色，--si-* 是底色上的字色（默认白，琥珀色配深字才看得清） */
   --s-mercari: #d93a31; --s-yahoo_auction: #f2a90c; --si-yahoo_auction: #2b1a00; --s-yahoo_flea: #c63d85;
   --s-rakuma: #7345d8; --s-surugaya: #2a6fd0; --s-mandarake: #13805a; --s-animate: #0b7f94;
+  --s-xianyu: #ffd400; --si-xianyu: #2b2200;
   --font: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
   --font-ja: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo UI", "Noto Sans CJK JP", "Noto Sans JP", var(--font);
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", "Microsoft YaHei UI", monospace;
@@ -145,6 +147,9 @@ body.scanning .logo .sweep { animation: spin 1.4s linear infinite; }
 .status { min-width: 0; }
 #stText { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .status .cd { color: var(--muted); font-variant-numeric: tabular-nums; padding-left: 8px; border-left: 1px solid var(--line-strong); }
+.status.attn { cursor: pointer; }
+.status.attn:hover { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.status .warn-t { color: var(--warn); font-weight: 600; }
 .dot { position: relative; width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
 .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn-dot); } .dot.err { background: var(--err); }
 .dot.live::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: inherit; animation: ping 1.8s var(--ease) infinite; }
@@ -198,6 +203,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 24px 24px 72px; }
 .price { display: flex; align-items: baseline; flex-wrap: wrap; gap: 1px 8px; margin-top: 8px; }
 .price b { font-size: 19px; font-weight: 750; letter-spacing: -.2px; color: var(--accent-ink); font-variant-numeric: tabular-nums; }
 .price b i { font-style: normal; font-size: .68em; font-weight: 700; margin-right: 1px; }
+.price b i.u { margin: 0 0 0 2px; }
 .price .was { order: 3; flex-basis: 100%; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .price small { color: var(--muted); font-size: 12px; }
 .price .unknown { color: var(--muted); font-size: 13px; font-weight: 500; }
@@ -253,33 +259,46 @@ body.selecting .cell.sel .card { border-color: transparent; box-shadow: 0 0 0 2.
 .art .a-turn { transform-origin: 80px 56px; animation: spin 7s linear infinite; }
 
 /* —— 关注 —— */
-.watch { display: grid; gap: 14px; padding: 18px 20px 14px; }
-.watch.off > :not(.watch-head):not(.actions) { opacity: .55; }
-.watch-head { display: flex; align-items: center; gap: 12px; }
-.watch-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
-.watch-title b { font-size: 17px; font-weight: 750; letter-spacing: .1px; }
+.wlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 14px; align-items: start; }
+.wlist > .empty { grid-column: 1 / -1; }
+.watch { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 16px 18px 10px; min-width: 0; }
+.watch.off .watch-title, .watch.off .conds, .watch.off .wsites { opacity: .5; }
+.watch-head { display: flex; align-items: flex-start; gap: 12px; }
+.watch-title { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; min-width: 0; }
+.watch-title b { font-size: 16.5px; font-weight: 750; letter-spacing: .1px; line-height: 1.45; overflow-wrap: anywhere; }
 .kw { display: inline-flex; align-items: center; gap: 6px; padding: 2px 11px 2px 9px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-2); font: 500 13px var(--font-ja); }
 .kw .i { width: 14px; height: 14px; color: var(--muted); }
 .pill { display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink-2); font-size: 12px; font-weight: 550; }
 .pill.ok { background: var(--ok-soft); color: var(--ok); }
-.mchips { display: flex; flex-wrap: wrap; gap: 6px; }
-.mchip { padding: 2px 10px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-2); font-size: 12.5px; }
-.mchip.good { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
-.mchip.muted { color: var(--muted); }
-.srcs { display: grid; grid-template-columns: repeat(auto-fill, minmax(238px, 1fr)); gap: 8px; }
-.src { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; column-gap: 8px; row-gap: 3px; padding: 9px 12px 10px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); min-width: 0; }
-.src .sdot { width: 10px; height: 10px; border-radius: 3px; background: var(--c, var(--muted)); }
-.src b { font-size: 13px; font-weight: 650; }
-.src .when { font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.src .st { width: 17px; height: 17px; }
-.src .msg { grid-column: 1 / -1; font-size: 12px; line-height: 1.45; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.src.ok .st { color: var(--ok); }
-.src.warn { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 32%, transparent); }
-.src.warn .st { color: var(--warn); } .src.warn .msg { color: color-mix(in srgb, var(--warn) 80%, var(--ink)); }
-.src.err { background: var(--err-soft); border-color: color-mix(in srgb, var(--err) 32%, transparent); }
-.src.err .st { color: var(--err); } .src.err .msg { color: color-mix(in srgb, var(--err) 80%, var(--ink)); }
-.src.none .st { color: var(--muted); }
-.actions { display: flex; align-items: center; gap: 4px; padding-top: 10px; border-top: 1px solid var(--line); margin: 0 -4px; padding-left: 4px; padding-right: 4px; }
+/* 价格、必含、排除并成一行小字 */
+.conds { margin-top: -5px; color: var(--muted); font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.conds span + span::before { content: "·"; margin: 0 7px; color: var(--line-strong); }
+/* 网站名：点了去那个网站看同一个搜索；出问题的标红，详细原因在顶上 */
+.wsites { display: flex; flex-wrap: wrap; gap: 6px; }
+.wsite { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 9px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2);
+  color: var(--ink-2); font-size: 12.5px; font-weight: 550; text-decoration: none; white-space: nowrap; transition: border-color .15s, background .15s, color .15s; }
+.wsite .sdot { width: 8px; height: 8px; border-radius: 2.5px; background: var(--c, var(--muted)); flex: none; }
+.wsite .i { width: 14px; height: 14px; }
+.wsite:hover { color: var(--ink); background: var(--panel); border-color: color-mix(in srgb, var(--c) 55%, var(--line-strong)); }
+.wsite.bad { color: var(--err); border-color: color-mix(in srgb, var(--err) 32%, var(--line)); }
+.wsite.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 32%, var(--line)); }
+.wsite.wait { color: var(--muted); }
+.watch-foot { display: flex; align-items: center; gap: 2px; margin: 0 -6px; padding: 8px 2px 0 6px; border-top: 1px solid var(--line); }
+.wstat { flex: 1; min-width: 0; padding-right: 6px; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wstat b { color: var(--ink-2); font-weight: 650; font-variant-numeric: tabular-nums; }
+.wstat.hot b { color: var(--accent-ink); }
+.watch-foot button.icon { width: 30px; }
+/* 网站出问题时，在关注页顶上集中说一次 */
+.issues { display: grid; gap: 10px; margin-bottom: 16px; padding: 14px 18px 16px; border-color: color-mix(in srgb, var(--warn) 34%, var(--line));
+  background: color-mix(in srgb, var(--warn-soft) 55%, var(--panel)); }
+.issues-head { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
+.issues-head .i { width: 18px; height: 18px; color: var(--warn); }
+.issue { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--warn) 16%, var(--line)); font-size: 13.5px; line-height: 1.65; }
+.issue > div:first-child { flex: 1 1 380px; min-width: 0; }
+.issue b { font-weight: 700; }
+.issue small { display: block; margin-top: 1px; color: var(--ink-2); font-size: 12.5px; line-height: 1.65; overflow-wrap: anywhere; }
+.issue .acts { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* —— 推送 —— */
 .channel { display: flex; align-items: center; gap: 14px; padding: 14px 18px; }
@@ -332,7 +351,21 @@ body.selecting .cell.sel .card { border-color: transparent; box-shadow: 0 0 0 2.
 .trouble { padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
 .trouble summary { cursor: pointer; width: fit-content; font-weight: 650; color: var(--accent-ink); }
 .trouble ol { margin: 10px 0 0; padding-left: 20px; line-height: 1.8; max-width: 760px; }
+.xy { display: grid; gap: 16px; padding: 20px 22px; }
+.xy-top { display: flex; align-items: center; gap: 12px 18px; flex-wrap: wrap; }
+.xy-top > div:first-child { flex: 1 1 360px; min-width: 0; }
+.xy-top b { font-size: 15px; font-weight: 650; }
+.xy-top p { margin: 3px 0 0; color: var(--ink-2); font-size: 13px; line-height: 1.65; max-width: 700px; }
+.xy-top .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.xy-result { padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.xy-result.ok { background: var(--ok-soft); color: var(--ok); }
+.xy-result.bad { background: var(--err-soft); color: color-mix(in srgb, var(--err) 85%, var(--ink)); }
+.xy-result a { color: inherit; font-weight: 650; }
+.xy .trouble p { margin: 10px 0; line-height: 1.7; max-width: 760px; }
+.xy textarea { display: block; height: 84px; margin-bottom: 10px; padding: 10px 12px; resize: vertical; font: 12px/1.5 var(--mono); }
 .migrate { display: grid; gap: 14px; padding: 20px 22px; }
+.buy { display: grid; gap: 10px; padding: 16px 20px; }
+.buy .hint { margin: 0; line-height: 1.7; max-width: 760px; }
 .migrate > p { margin: 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.7; max-width: 760px; }
 .migrate .custom-url { margin: 0; max-width: 760px; }
 .migrate-report { margin: 0; padding: 14px 16px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line);
@@ -365,6 +398,7 @@ dialog form { display: flex; flex-direction: column; flex: 1; min-width: 0; min-
 .site span { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 13px 0 11px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--panel-2);
   color: var(--ink-2); font-size: 13px; font-weight: 550; transition: background .15s, border-color .15s, color .15s; }
 .site .sdot { width: 10px; height: 10px; border-radius: 3px; background: var(--c); opacity: .45; transition: opacity .15s; }
+.site em { font-style: normal; font-size: 11.5px; color: var(--muted); }
 .site:hover span { border-color: color-mix(in srgb, var(--c) 55%, var(--line-strong)); }
 .site input:checked + span { background: color-mix(in srgb, var(--c) 11%, var(--panel)); border-color: color-mix(in srgb, var(--c) 70%, transparent); color: var(--ink); }
 .site input:checked + span .sdot { opacity: 1; }
@@ -448,14 +482,11 @@ body.selecting main { padding-bottom: 140px; }
   .page-head { align-items: center; }
   .page-head h2 { font-size: 20px; }
   .page-head p { display: none; }
-  .watch { padding: 16px 16px 12px; }
-  /* 手机上每个站点只占半行，出问题的那几个再展开成整行 */
-  .srcs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .src { grid-template-columns: auto 1fr auto; padding: 8px 11px 9px; }
-  .src .when { display: none; }
-  .src .msg { -webkit-line-clamp: 1; }
-  .src.warn, .src.err { grid-column: 1 / -1; }
-  .src.warn .msg, .src.err .msg { -webkit-line-clamp: 3; }
+  .watch { padding: 14px 14px 8px; }
+  .wstat .wl, .watch-foot .bl { display: none; }
+  .watch-foot [data-act=edit] { width: 30px; padding: 0; }
+  .issues { padding: 12px 14px 14px; }
+  .xy { padding: 18px 16px 16px; }
   .channel { flex-wrap: wrap; }
   .phone { padding: 18px 16px 16px; }
   .phone-main { flex-direction: column; align-items: stretch; }
@@ -477,6 +508,7 @@ body.selecting main { padding-bottom: 140px; }
   #selectBtn { width: 36px; padding: 0; }
   .status .mid { display: none; }
   .status { padding: 0 11px 0 10px; }
+  .status.attn .cd { display: none; }
   .toolbar select { max-width: 140px; }
 }
 @media (max-width: 360px) {
@@ -559,20 +591,27 @@ body.selecting main { padding-bottom: 140px; }
 
   <section id="tab-watches" class="tabpanel" role="tabpanel" hidden>
     <div class="page-head">
-      <div><h2>关注</h2><p>一个关注 = 一个搜索词。新加的关注第一次扫描只记下现有商品，之后新上架的才推送。</p></div>
+      <div><h2>关注</h2><p>一个关注 = 一个搜索词。新加的关注第一次扫描只记下现有商品，之后新上架的才推送。点网站名，去那个网站看同一个搜索。</p></div>
       <div class="spacer"></div>
       <button class="primary" id="addWatch"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>新建关注</button>
     </div>
-    <div class="list" id="watchList"></div>
+    <div id="watchIssues"></div>
+    <div class="wlist" id="watchList"></div>
   </section>
 
   <section id="tab-channels" class="tabpanel" role="tabpanel" hidden>
     <div class="page-head">
-      <div><h2>推送</h2><p>每轮扫描到的新商品合成一条推送；Bark、ntfy、Telegram 逐条推。手机能打开这个网页时（设置 → 手机访问），推送点开是一张推送页，大图、价格和原链接都在上面。</p></div>
+      <div><h2>推送</h2><p>配置接收渠道，再用消息积木组合配图、商品信息和快捷操作。保存后，后续推送按你的布局发送。</p></div>
       <div class="spacer"></div>
       <button class="primary" id="addChannel"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>添加推送</button>
     </div>
     <div class="list" id="channelList"></div>
+    <div id="messageDesigner" class="message-designer" hidden></div>
+    <h3 class="sec-h">点开商品去哪</h3>
+    <div class="panel buy">
+      <div class="chips" id="buyChips"></div>
+      <p class="hint" id="buyHint"></p>
+    </div>
     <h3 class="sec-h">浏览器通知</h3>
     <div class="panel switches" style="padding:4px 20px">
       <label class="row-switch"><span>开着这个网页时弹系统通知<small id="notifyHint"></small></span><span class="switch"><input type="checkbox" id="browserNotify"><span></span></span></label>
@@ -589,13 +628,14 @@ body.selecting main { padding-bottom: 140px; }
         <div class="sec">
           <div class="sec-title"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>扫描节奏</div>
           <div class="row2">
-            <label class="field"><span>扫描间隔（秒）</span><input type="number" id="setInterval" min="30"><small>最少 30。关注多、网站多时别太小，容易被封 IP。</small></label>
-            <label class="field"><span>同站请求间隔（秒）</span><input type="number" id="setGap" min="0.5" step="0.5"><small>同一个网站两次请求之间至少等多久。</small></label>
+            <label class="field"><span>每个关注多久查一次（秒）</span><input type="number" id="setInterval" min="10"><small>最少 10。每个网站各查各的；关注多时，一个网站轮一圈要「关注数 × 同站请求间隔」。</small></label>
+            <label class="field"><span>同站请求间隔（秒）</span><input type="number" id="setGap" min="0.5" step="0.5"><small>同一个网站两次请求之间至少等多久。太小容易被封；骏河屋、Mandarake、闲鱼自己会更慢。</small></label>
           </div>
         </div>
         <div class="sec">
           <div class="sec-title"><svg class="i" aria-hidden="true"><use href="#i-globe"/></svg>网络</div>
-          <label class="field"><span>代理</span><input type="text" id="setProxy" placeholder="例如 http://127.0.0.1:7890，留空则直连 / 用系统环境变量"><small>某些网站在国内连不上或被拦时填。支持 HTTP 代理（Clash 的混合端口可以）。</small></label>
+          <label class="field"><span>代理</span><input type="text" id="setProxy" placeholder="例如 http://127.0.0.1:7890，留空就跟着系统代理走"><small>留空时跟着系统代理走：Clash 之类的软件打开「系统代理」就行，开关随时拨都能跟上。煤炉、雅虎拍卖、乐天Rakuma 在国内要走代理。支持 HTTP 代理（Clash 的混合端口可以）。闲鱼不走代理。</small></label>
+          <div class="hint" id="proxyNow" style="margin-top:-6px"></div>
         </div>
         <div class="sec">
           <div class="sec-title"><svg class="i" aria-hidden="true"><use href="#i-coin"/></svg>汇率</div>
@@ -611,6 +651,23 @@ body.selecting main { padding-bottom: 140px; }
         <div class="log-head"><span class="dot ok live"></span>运行日志</div>
         <div class="logs" id="logs"></div>
       </div>
+    </div>
+    <h3 class="sec-h">闲鱼账号</h3>
+    <div class="panel xy" id="xyPanel">
+      <div class="xy-top">
+        <div><b id="xyTitle">闲鱼要登录才能搜</b><p id="xyDesc"></p></div>
+        <div class="acts" id="xyActs"></div>
+      </div>
+      <div class="phone-main" id="xyQr" hidden>
+        <div class="qr"><img id="xyQrImg" alt="用闲鱼 App 扫这个二维码登录" width="172" height="172"></div>
+        <div class="phone-info"><b id="xyStep"></b><p id="xyStepHint"></p></div>
+      </div>
+      <div class="xy-result" id="xyResult" hidden></div>
+      <details class="trouble" id="xyCookieBox"><summary>扫码登录不了？</summary>
+        <p>也可以从电脑的浏览器里复制登录信息：在浏览器里打开 goofish.com 并登录，按 F12 打开开发者工具，切到「网络（Network）」，刷新一下页面，点列表里任意一个 goofish.com 的请求，在「请求标头」里找到 cookie，把它的值整段复制下来贴到这里。</p>
+        <textarea id="xyCookie" placeholder="一长串 a=…; b=…; unb=…" spellcheck="false" autocomplete="off" aria-label="闲鱼的 cookie"></textarea>
+        <button id="xyCookieSave"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>用这段 cookie 登录</button>
+      </details>
     </div>
     <h3 class="sec-h">手机访问</h3>
     <div class="panel phone">
@@ -674,7 +731,7 @@ body.selecting main { padding-bottom: 140px; }
         <div class="gloss" id="gloss"></div>
       </div>
       <label class="field"><span>显示名称</span><input type="text" name="name" placeholder="不填就用关键词" autocomplete="off"></label>
-      <div class="field"><span>在哪些网站找</span><div class="sites" id="srcChecks"></div></div>
+      <div class="field"><span>在哪些网站找</span><div class="sites" id="srcChecks"></div><small id="srcNote" hidden></small></div>
       <div class="row2">
         <label class="field"><span>最低价（日元）</span><input type="number" name="price_min" min="0" placeholder="不限"><small class="cnyHint"></small></label>
         <label class="field"><span>最高价（日元）</span><input type="number" name="price_max" min="0" placeholder="不限"><small class="cnyHint"></small></label>
@@ -712,6 +769,7 @@ body.selecting main { padding-bottom: 140px; }
     </div>
     <div class="dlg-body">
       <label class="field"><span>方式</span><select name="type" id="chType"></select></label>
+      <p class="hint" id="chHelp" style="margin:0" hidden></p>
       <label class="field"><span>备注名</span><input type="text" name="name" placeholder="可不填" autocomplete="off"></label>
       <div id="chFields" style="display:grid;gap:14px"></div>
       <div class="switches"><label class="row-switch"><span>启用</span><span class="switch"><input type="checkbox" name="enabled" checked><span></span></span></label></div>
@@ -744,6 +802,7 @@ body.selecting main { padding-bottom: 140px; }
 
 <div id="toast" role="status" aria-live="polite"></div>
 
+<script src="/static/message-designer.js"></script>
 <script>
 "use strict";
 const $ = (s, el = document) => el.querySelector(s);
@@ -773,6 +832,8 @@ const CH_LOOK = {
   serverchan: ["酱", "#1f8a4c"], pushplus: ["+", "#0b7f94"], wecom: ["企", "#2a6fd0"], bark: ["B", "#c2610a"],
   dingtalk: ["钉", "#2a6fd0"], feishu: ["飞", "#3a6fe0"], telegram: ["T", "#1f8bc4"], ntfy: ["n", "#3f8f5f"],
   email: ["@", "#7345d8"], webhook: ["</>", "#5d6470"],
+  wxpusher: ["W", "#2a8a50"], xtuis: ["虾", "#cb5a27"], iyuu: ["语", "#14877b"],
+  pushme: ["P", "#356dd0"], discord: ["D", "#5865f2"], pushover: ["P", "#297c91"],
 };
 
 let S = null;              // /api/state
@@ -809,10 +870,25 @@ function toast(msg, bad, action) {
   clearTimeout(toast.t); toast.t = setTimeout(() => t.className = "", action ? 9000 : bad ? 5000 : 2500);
 }
 
-const srcName = k => (S?.sources.find(s => s.key === k) || {}).name || k;
+const srcInfo = k => S?.sources.find(s => s.key === k) || {};
+const srcName = k => srcInfo(k).name || k;
 const num = p => Number(p).toLocaleString("ja-JP");
 const yen = p => p == null ? "价格未知" : "¥" + num(p);
 const cny = p => p == null || !S ? "" : "≈" + Math.round(p * S.rate).toLocaleString("zh-CN") + "元";
+// 闲鱼标的是人民币，别的网站是日元
+const isCny = k => srcInfo(k).currency === "CNY";
+const money = (p, k) => p == null ? "价格未知" : isCny(k) ? num(p) + "元" : "¥" + num(p);
+// 闲鱼存的是原图，列表里换成小图（阿里的图床认 _400x400.jpg 后缀，给的是 WebP，浏览器看没问题）
+const thumb = (url, k) => k === "xianyu" && /alicdn\.com\/.+\.(jpe?g|png)$/i.test(url || "") ? url + "_400x400.jpg" : url;
+const host = u => String(u || "").replace(/^https?:\/\//, "");
+// 任意门（Doorzo）网页版的商品页，和 notify.py 的 buy_url 一样；任意门没有的站照旧开原网页
+const DOORZO = { mercari: "mercari", yahoo_auction: "yahoo", yahoo_flea: "paypay", rakuma: "rakuma", surugaya: "surugaya" };
+function buyUrl(it) {
+  const id = it.item_id || it.id;
+  return S?.config.buy === "doorzo" && DOORZO[it.source] && id && !String(it.url).includes("/shops/")
+    ? `https://www.doorzo.cn/mall/${DOORZO[it.source]}/detail/${encodeURIComponent(id)}` : it.url;
+}
+const dateText = ts => { const d = new Date(ts * 1000); return `${d.getMonth() + 1}月${d.getDate()}日`; };
 const now = () => Date.now() / 1000 + clockSkew;
 function ago(ts) {
   if (!ts) return "";
@@ -828,9 +904,16 @@ const srcStyle = k => `--c:var(--s-${esc(k)},var(--muted));--ci:var(--si-${esc(k
 
 // —— 状态 ——
 async function loadState() {
+  const previousBuy = S?.config.buy;
   S = await api("/api/state");
   clockSkew = S.monitor.now - Date.now() / 1000;
   renderStatus(); renderWatches(); renderChannels(); renderSettings(); renderFeedFilters();
+  if (previousBuy !== S.config.buy) {
+    $$("#feed .cell").forEach(cell => {
+      const it = loaded.get(cell.dataset.key), card = $(".card", cell);
+      if (it && card) card.href = buyUrl(it);
+    });
+  }
 }
 
 function renderStatus() {
@@ -844,11 +927,22 @@ function renderStatus() {
   $("#scanBtn").classList.toggle("busy", !!m.busy);
   document.body.classList.toggle("scanning", !!m.busy);
   bar.classList.toggle("busy", !!m.busy && active > 0);
+  // 有网站没搜成：圆点变黄，点一下去关注页看原因
+  const bad = new Set((S.problems || []).map(p => p.source)).size;
+  $("#status").classList.toggle("attn", bad > 0);
+  $("#status").title = bad ? "有网站没搜成，点这里看原因" : "";
   if (!active) { set("warn", "还没有启用的关注", ""); bar.style.setProperty("--p", "0%"); return; }
+  if (m.live) {   // 每个网站各自不停地轮着查，没有「下一轮」
+    bar.style.setProperty("--p", "0%");
+    set(bad ? "warn" : "ok live", bad ? `<span class="mid">监控中 · </span><span class="warn-t">${bad} 个网站没搜成</span>`
+      : `<span class="mid">监控中</span><span class="long">${m.period ? ` · 约 ${m.period} 秒查一遍` : ""}</span>`, "");
+    return;
+  }
   if (m.busy) { set("ok live", "扫描中…", ""); return; }
   const left = Math.max(0, Math.round(m.next_cycle_at - now()));
   const mm = Math.floor(left / 60), ss = String(left % 60).padStart(2, "0");
-  set("ok live", `<span class="mid">监控中</span><span class="long"> · ${active} 个关注</span>`, m.next_cycle_at ? `下次 ${mm}:${ss}` : "");
+  set(bad ? "warn" : "ok live", bad ? `<span class="mid">监控中 · </span><span class="warn-t">${bad} 个网站没搜成</span>`
+    : `<span class="mid">监控中</span><span class="long"> · ${active} 个关注</span>`, m.next_cycle_at ? `下次 ${mm}:${ss}` : "");
   const span = m.next_cycle_at - m.last_cycle_at;
   const p = m.last_cycle_at && span > 0 ? Math.min(1, Math.max(0, (now() - m.last_cycle_at) / span)) : 0;
   bar.style.setProperty("--p", (p * 100).toFixed(1) + "%");
@@ -856,21 +950,22 @@ function renderStatus() {
 
 // —— 上新 ——
 function cardHTML(it, opts = {}) {
-  const img = it.image ? `<img loading="lazy" decoding="async" src="${esc(it.image)}" alt="" onload="this.classList.add('ld')" onerror="this.remove()">` : "";
+  const img = it.image ? `<img loading="lazy" decoding="async" src="${esc(thumb(it.image, it.source))}" alt="" onload="this.classList.add('ld')" onerror="this.remove()">` : "";
   const drop = it.kind === "drop";
   const pct = drop && it.old_price && it.price != null ? Math.round((1 - it.price / it.old_price) * 100) : 0;
   const badge = drop ? `<span class="badge drop">降价${pct > 0 ? " −" + pct + "%" : ""}</span>` : "";
-  const old = drop && it.old_price != null ? `<span class="was">原价 <s>${yen(it.old_price)}</s></span>` : "";
-  const price = it.price == null ? `<span class="unknown">价格未知</span>` : `<b><i>¥</i>${num(it.price)}</b>`;
+  const old = drop && it.old_price != null ? `<span class="was">原价 <s>${money(it.old_price, it.source)}</s></span>` : "";
+  const price = it.price == null ? `<span class="unknown">价格未知</span>`
+    : isCny(it.source) ? `<b>${num(it.price)}<i class="u">元</i></b>` : `<b><i>¥</i>${num(it.price)}</b>`;
   const when = !opts.preview && it.found_at ? `<span class="ago" data-ts="${it.found_at}">${ago(it.found_at)}</span>` : "";
   const tag = !opts.preview && it.watch_name ? `<span class="tag" title="关注：${esc(it.watch_name)}">${ico("tag")}${esc(it.watch_name)}</span>` : "";
   const extra = it.extra ? `<span class="ex" title="${esc(it.extra)}">${esc(it.extra)}</span>` : "";
-  return `<a class="card${opts.fresh ? " fresh" : ""}${opts.out ? " out" : ""}" href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">
+  return `<a class="card${opts.fresh ? " fresh" : ""}${opts.out ? " out" : ""}" href="${esc(buyUrl(it))}" target="_blank" rel="noopener noreferrer">
     <div class="thumb"><div class="noimg">${ico("image")}</div>${img}
       <span class="badge" style="${srcStyle(it.source)}">${esc(srcName(it.source))}</span>${badge}${when}</div>
     <div class="body">
       <div class="title" lang="ja" title="${esc(it.title)}">${esc(it.title)}</div>
-      <div class="price">${old}${price}<small>${cny(it.price)}</small></div>
+      <div class="price">${old}${price}<small>${isCny(it.source) ? "" : cny(it.price)}</small></div>
       ${tag || extra ? `<div class="meta">${tag}${extra}</div>` : ""}
     </div></a>`;
 }
@@ -948,7 +1043,7 @@ function blockGroups(items) {
 function blockGroupHTML(g) {
   const n = g.list.length;
   const head = `<div class="bg-head">${ico("tag")}<b>${esc(g.w ? g.w.name : "已经删掉的关注")}</b><span class="hint">${n} 件</span></div>`;
-  const titles = `<ul class="btitles">${g.list.map(it => `<li>${it.image ? `<img src="${esc(it.image)}" alt="" loading="lazy">` : `<i class="noimg-s"></i>`}<span lang="ja">${esc(it.title)}</span></li>`).join("")}</ul>`;
+  const titles = `<ul class="btitles">${g.list.map(it => `<li>${it.image ? `<img src="${esc(thumb(it.image, it.source))}" alt="" loading="lazy">` : `<i class="noimg-s"></i>`}<span lang="ja">${esc(it.title)}</span></li>`).join("")}</ul>`;
   if (!g.w) return `<section class="bgroup">${head}${titles}<p class="hint" style="margin:0">这个关注已经删了，只屏蔽这几件。</p></section>`;
   const q = list => list.map(m => `「${esc(m.word)}」`).join("和");
   const all = g.must.filter(m => m.missing === n), some = g.must.filter(m => m.missing < n);
@@ -1092,9 +1187,9 @@ function announce(items) {
   if (store.get("notify", false) && "Notification" in window && Notification.permission === "granted") {
     items.slice(0, 4).forEach(it => {
       const n = new Notification(`${srcName(it.source)}｜${it.watch_name}`, {
-        body: `${it.title}\n${yen(it.price)} ${cny(it.price)}`, icon: it.image || undefined, tag: it.source + it.item_id,
+        body: `${it.title}\n${money(it.price, it.source)} ${isCny(it.source) ? "" : cny(it.price)}`, icon: thumb(it.image, it.source) || undefined, tag: it.source + it.item_id,
       });
-      n.onclick = () => { window.open(it.url, "_blank", "noopener"); n.close(); };
+      n.onclick = () => { window.open(buyUrl(it), "_blank", "noopener"); n.close(); };
     });
   }
 }
@@ -1112,58 +1207,108 @@ function beep() {
 }
 
 // —— 关注 ——
-const SRC_ICON = { ok: "check-circle", warn: "alert", err: "xcircle", none: "clock" };
-function srcState(s) {
-  if (!s) return "none";
-  if (s.ok) return "ok";
-  return s.count === 0 && /解析到 0 件/.test(s.message) ? "warn" : "err";
+// 价格、必含、排除并成一行小字
+function condsHTML(w) {
+  const range = w.price_min && w.price_max ? `${yen(w.price_min)} ~ ${yen(w.price_max)}`
+    : w.price_max ? `${yen(w.price_max)} 以下` : w.price_min ? `${yen(w.price_min)} 以上` : "";
+  const parts = [range, w.must.length ? `必含 ${words(w.must)}` : "", w.exclude.length ? `排除 ${words(w.exclude)}` : "",
+    w.price_drop ? "降价也提醒" : ""].filter(Boolean);
+  return parts.length ? `<div class="conds" lang="ja">${parts.map(t => `<span>${esc(t)}</span>`).join("")}</div>` : "";
+}
+
+// 网站名：点了去那个网站看同一个搜索。出了问题的标出来，鼠标停上去看原因（顶上也会集中说）
+function siteHTML(w, k) {
+  const s = (S.status[w.id] || {})[k], info = srcInfo(k);
+  let cls = "", tip = `去${srcName(k)}看这个搜索`, mark = "";
+  if (w.enabled && info.login && !info.ready) { cls = " bad"; tip = `${srcName(k)}还没登录：设置 → 闲鱼账号`; mark = ico("alert"); }
+  else if (w.enabled && s && !s.ok) { cls = s.kind === "parse" ? " warn" : " bad"; tip = `${srcName(k)}：${s.message}`; mark = ico("alert"); }
+  else if (w.enabled && !s) { cls = " wait"; tip = `${srcName(k)}还没扫过`; }
+  const url = (S.links[w.id] || {})[k] || info.home || "#";
+  return `<a class="wsite${cls}" style="${srcStyle(k)}" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="${esc(tip)}"><i class="sdot"></i>${esc(srcName(k))}${mark}</a>`;
+}
+
+function statHTML(w) {
+  if (!w.enabled) return `<span class="wstat">已暂停</span>`;
+  const st = S.status[w.id] || {}, s = (S.stats || {})[w.id];
+  if (!Object.keys(st).length) return `<span class="wstat">等第一次扫描…</span>`;
+  if (!s || !s.last) return `<span class="wstat">还没有上新</span>`;
+  // 手机上去掉 .wl 那几个字：「7 天上新 2 件 · 14 分钟前」
+  const recent = s.recent ? `<span class="wl">这 </span>7 天上新 <b>${s.recent}</b> 件 · ` : "";
+  return `<span class="wstat${now() - s.last < 86400 ? " hot" : ""}">${recent}<span class="wl">最近一件 </span><span data-ts="${s.last}">${ago(s.last)}</span></span>`;
+}
+
+// 网站出问题时在顶上集中说一次：同一类问题并成一条，说清楚怎么办
+function issueRow(what, why = "", acts = "") {
+  return `<div class="issue"><div>${what}${why ? `<small>${why}</small>` : ""}</div>${acts ? `<div class="acts">${acts}</div>` : ""}</div>`;
+}
+function issuesHTML() {
+  const list = S.problems || [];
+  if (!list.length) return "";
+  const only = p => p.all ? "" : `（只有「${esc(p.watches.join("」「"))}」）`;
+  const rows = [];
+  const net = list.filter(p => p.kind === "net");
+  if (net.length) {
+    const reasons = [...new Set(net.map(p => (/（([^（）]+)）$/.exec(p.message) || [])[1]).filter(Boolean))];
+    const proxyDown = net.some(p => p.message.startsWith("代理"));
+    const n = S.net || {};
+    let why = "", acts = "";
+    if (n.mode === "direct") {
+      why = `程序现在是直连的，${net.length > 1 ? "这几个网站" : "这个网站"}在国内一般要走代理。`;
+      if (n.local) {
+        why += `这台电脑上 ${esc(host(n.local))} 有能用的代理（Clash 之类），点右边就改成走它。`;
+        acts = `<button class="primary sm" data-fix="proxy" data-proxy="${esc(n.local)}">用这个代理</button>`;
+      } else {
+        why += "把代理软件（Clash 之类）的「系统代理」打开就行，程序会自己跟上；或者到「设置 → 网络」里填代理地址。";
+        acts = `<button class="sm" data-fix="netset">去设置</button>`;
+      }
+    } else if (proxyDown) {
+      why = `代理 ${esc(host(n.proxy))} 没开或者端口不对。把代理软件打开${n.mode === "app" ? "，或者把「设置 → 网络」里的代理改对、清空" : ""}。`;
+      if (n.mode === "app") acts = `<button class="sm" data-fix="netset">去设置</button>`;
+    } else {
+      why = `程序走的是${n.mode === "app" ? "设置里填的" : "系统"}代理 ${esc(host(n.proxy))}，代理也没连上：看看代理软件还开着没有、节点能不能用。`;
+      if (n.mode === "app") acts = `<button class="sm" data-fix="netset">去设置</button>`;
+    }
+    const what = `<b>${esc(net.map(p => srcName(p.source)).join("、"))}</b> 连不上${reasons.length ? "（" + esc(reasons.join("、")) + "）" : ""}${net.length === 1 ? only(net[0]) : ""}`;
+    rows.push(issueRow(what, why, acts));
+  }
+  for (const p of list.filter(p => p.kind !== "net")) {
+    const name = `<b>${esc(srcName(p.source))}</b>`, code = (/HTTP \d+/.exec(p.message) || [""])[0];
+    if (p.kind === "login") rows.push(issueRow(`${name} 要先登录${only(p)}`, "用闲鱼 App 扫一下码就能搜。", `<button class="primary sm" data-fix="xianyu">去登录</button>`));
+    else if (p.kind === "blocked" && code) rows.push(issueRow(`${name} 拦下了请求（${code}）${only(p)}`, "像是人机验证或者限流，一般过一阵自己就好；一直这样的话把扫描间隔调大，或者换个代理节点。"));
+    else if (p.kind === "blocked") rows.push(issueRow(`${name} 拦下了请求${only(p)}`, esc(p.message)));
+    else if (p.kind === "parse") rows.push(issueRow(`${name} 解析不出商品${only(p)}`, "网页能打开，但一件商品都没认出来，可能是网站改版了。"));
+    else rows.push(issueRow(`${name} 出错了${only(p)}`, esc(p.message)));
+  }
+  const busy = S.monitor.busy, n = new Set(list.map(p => p.source)).size;
+  return `<div class="panel issues">
+    <div class="issues-head">${ico("alert")}<span>${n} 个网站最近一次没搜成</span><span class="spacer"></span>
+      <button class="ghost sm" data-fix="rescan"${busy ? " disabled" : ""}>${busy ? "正在扫描…" : "重新扫描"}</button></div>
+    ${rows.join("")}</div>`;
 }
 
 function renderWatches() {
   const ws = S.config.watches;
   $("#watchCount").textContent = ws.length; $("#watchCount").hidden = !ws.length;
+  setHTML($("#watchIssues"), issuesHTML());
   const box = $("#watchList");
   if (!ws.length) {
     setHTML(box, `<div class="panel empty">${emptyHTML("还没有关注", "点「新建关注」。关键词用日文搜得最准，表单里有常用谷子词可以点。",
       `<button class="primary" data-new="watch">${ico("plus")}新建关注</button>`)}</div>`);
     return;
   }
-  setHTML(box, ws.map(w => {
-    const st = S.status[w.id] || {};
-    const range = w.price_min && w.price_max ? `${yen(w.price_min)} ~ ${yen(w.price_max)}`
-      : w.price_max ? `${yen(w.price_max)} 以下` : w.price_min ? `${yen(w.price_min)} 以上` : "";
-    const chips = [
-      range ? `<span class="mchip">${esc(range)}</span>` : `<span class="mchip muted">价格不限</span>`,
-      w.must.length ? `<span class="mchip">必含 ${esc(words(w.must))}</span>` : "",
-      w.exclude.length ? `<span class="mchip">排除 ${esc(words(w.exclude))}</span>` : "",
-      w.price_drop ? `<span class="mchip good">降价也提醒</span>` : "",
-    ].join("");
-    const states = w.sources.map(k => srcState(st[k]));
-    const health = states.includes("err") ? "err" : states.includes("warn") ? "warn" : states.length && states.every(s => s === "ok") ? "ok" : "";
-    const healthTip = { err: "有网站出错了", warn: "有网站解析异常", ok: "所有网站正常", "": "还没扫过" }[health];
-    const srcs = w.sources.map(k => {
-      const s = st[k], state = srcState(s);
-      const msg = s ? s.message : "等待第一次扫描";
-      return `<div class="src ${state}" style="${srcStyle(k)}" title="${esc(msg)}">
-        <i class="sdot"></i><b>${esc(srcName(k))}</b><span class="when">${s ? ago(s.checked_at) : ""}</span>${ico(SRC_ICON[state], "st")}
-        <span class="msg">${esc(msg)}</span></div>`;
-    }).join("");
-    return `<div class="panel watch${w.enabled ? "" : " off"}" data-id="${esc(w.id)}">
+  setHTML(box, ws.map(w => `<div class="panel watch${w.enabled ? "" : " off"}" data-id="${esc(w.id)}">
       <div class="watch-head">
-        <span class="dot ${health}" title="${healthTip}"></span>
-        <div class="watch-title"><b>${esc(w.name)}</b>${w.name !== w.keyword ? `<span class="kw" lang="ja">${ico("search")}${esc(w.keyword)}</span>` : ""}${w.enabled ? "" : `<span class="pill">已暂停</span>`}</div>
+        <div class="watch-title"><b>${esc(w.name)}</b>${w.name !== w.keyword ? `<span class="kw" lang="ja">${ico("search")}${esc(w.keyword)}</span>` : ""}</div>
         <div class="spacer"></div>
-        <label class="switch" title="启用/暂停"><input type="checkbox" data-act="toggle" aria-label="启用或暂停" ${w.enabled ? "checked" : ""}><span></span></label>
+        <label class="switch" title="${w.enabled ? "暂停" : "启用"}"><input type="checkbox" data-act="toggle" aria-label="启用或暂停" ${w.enabled ? "checked" : ""}><span></span></label>
       </div>
-      <div class="mchips">${chips}</div>
-      <div class="srcs">${srcs}</div>
-      <div class="actions">
-        <button class="ghost sm" data-act="feed">${ico("spark")}看它的上新</button>
-        <div class="spacer"></div>
-        <button class="ghost sm" data-act="edit">${ico("edit")}编辑</button>
-        <button class="ghost sm danger" data-act="del">${ico("trash")}删除</button>
-      </div></div>`;
-  }).join(""));
+      ${condsHTML(w)}
+      <div class="wsites">${w.sources.map(k => siteHTML(w, k)).join("")}</div>
+      <div class="watch-foot">${statHTML(w)}
+        <button class="ghost sm" data-act="feed">${ico("spark")}看上新</button>
+        <button class="ghost sm" data-act="edit" title="编辑">${ico("edit")}<span class="bl">编辑</span></button>
+        <button class="ghost sm icon danger" data-act="del" title="删除" aria-label="删除">${ico("trash")}</button>
+      </div></div>`).join(""));
 }
 
 function renderGloss() {
@@ -1185,9 +1330,11 @@ function openWatch(w) {
   f.exclude.value = words(w?.exclude);
   f.price_drop.checked = !!w?.price_drop;
   f.enabled.checked = w ? w.enabled : true;
-  const chosen = w?.sources || S.sources.map(s => s.key);
+  // 新建时默认勾上能搜的网站；闲鱼没登录就先不勾
+  const chosen = w?.sources || S.sources.filter(s => !s.login || s.ready).map(s => s.key);
   $("#srcChecks").innerHTML = S.sources.map(s =>
-    `<label class="site" style="${srcStyle(s.key)}"><input type="checkbox" value="${s.key}" ${chosen.includes(s.key) ? "checked" : ""}><span><i class="sdot"></i>${esc(s.name)}</span></label>`).join("");
+    `<label class="site" style="${srcStyle(s.key)}"><input type="checkbox" value="${s.key}" ${chosen.includes(s.key) ? "checked" : ""}><span><i class="sdot"></i>${esc(s.name)}${s.login && !s.ready ? "<em>要登录</em>" : ""}</span></label>`).join("");
+  updateSrcNote();
   glossAll = false; renderGloss();
   $("#previewBox").hidden = true;
   updateCny();
@@ -1204,6 +1351,14 @@ function watchFromForm() {
     must: f.must.value, exclude: f.exclude.value,
     price_drop: f.price_drop.checked, enabled: f.enabled.checked,
   };
+}
+
+function updateSrcNote() {
+  const on = $$("#srcChecks input:checked").map(i => i.value), note = $("#srcNote");
+  const xy = on.includes("xianyu"), info = srcInfo("xianyu");
+  note.hidden = !xy;
+  if (xy) note.textContent = (info.ready ? "" : "闲鱼还没登录：先到「设置 → 闲鱼账号」扫码，不然闲鱼这一项会一直报错。")
+    + "闲鱼标的是人民币，和下面的价格区间比的时候按汇率换成日元；闲鱼上中文标题多，关键词可以另建一个中文的。";
 }
 
 function updateCny() {
@@ -1258,10 +1413,26 @@ function renderChannels() {
   const n = $("#browserNotify"), hint = $("#notifyHint");
   n.checked = store.get("notify", false);
   $("#beep").checked = store.get("beep", true);
+  renderBuy();
+  if (typeof MessageDesigner !== "undefined") MessageDesigner.render(S, { api, toast, refresh, copyText });
   if (!("Notification" in window)) { n.disabled = true; hint.textContent = "这个浏览器不支持系统通知"; }
   else if (Notification.permission === "denied") hint.textContent = "浏览器拒绝了通知权限，要在地址栏左边的网站设置里打开";
   else hint.textContent = "";
 }
+
+function renderBuy() {
+  const buy = S.config.buy || "";
+  setHTML($("#buyChips"), [["", "原网页"], ["doorzo", "任意门"]].map(([v, label]) =>
+    `<button class="chip${buy === v ? " on" : ""}" data-buy="${v}">${label}</button>`).join(""));
+  $("#buyHint").textContent = buy === "doorzo"
+    ? "推送和上新页里点煤炉、雅虎拍卖、雅虎闲置、乐天、骏河屋的商品，直接打开任意门的商品页，在那里下单；第一次要在手机浏览器里登录任意门。Mandarake、animate、闲鱼任意门没有，还是打开原网页。推送里每件后面另有「原页」。"
+    : "点商品打开它所在的网站。用任意门代购的话选「任意门」，就不用再复制链接、打开 App、粘贴搜索了。日淘市集没有公开的商品链接，做不到。";
+}
+$("#buyChips").addEventListener("click", async e => {
+  const b = e.target.closest("[data-buy]"); if (!b) return;
+  try { await api("/api/settings", { buy: b.dataset.buy }); toast(b.dataset.buy ? "以后点商品去任意门" : "以后点商品打开原网页"); refresh(); }
+  catch (err) { toast(err.message, true); }
+});
 
 function openChannel(c) {
   const f = $("#chForm");
@@ -1279,9 +1450,15 @@ function openChannel(c) {
 
 function renderChFields(values) {
   const t = S.channel_types[$("#chType").value];
+  const help = $("#chHelp");
+  help.hidden = !t.guide;
+  help.innerHTML = t.guide ? `${esc(t.guide.text)} <a href="${esc(t.guide.url)}" target="_blank" rel="noopener noreferrer">打开设置教程 ↗</a>` : "";
+  const on = value => !["false", "0", "off", "no", ""].includes(String(value).trim().toLowerCase());
+  const checked = fd => fd.key in values ? on(values[fd.key])
+    : fd.key === "cards" && "rich" in values ? !on(values.rich) : fd.default !== false;
   $("#chFields").innerHTML = t.fields.map(fd => fd.kind === "bool" ? `
     <div class="switches"><label class="row-switch"><span>${esc(fd.label)}<small>${esc(fd.hint)}</small></span>
-      <span class="switch"><input type="checkbox" data-key="${fd.key}" ${values[fd.key] === false ? "" : "checked"}><span></span></span></label></div>` : `
+      <span class="switch"><input type="checkbox" data-key="${fd.key}" ${checked(fd) ? "checked" : ""}><span></span></span></label></div>` : `
     <label class="field"><span>${esc(fd.label)}${fd.required ? "" : "（可选）"}</span>
       <input type="${/password|secret|token|key/.test(fd.key) ? "password" : "text"}" data-key="${fd.key}" value="${esc(values[fd.key] || "")}" ${fd.required ? "required" : ""} autocomplete="off">
       <small>${esc(fd.hint)}</small></label>`).join("");
@@ -1313,6 +1490,10 @@ function renderSettings() {
   const logs = $("#logs"), atBottom = logs.scrollTop + logs.clientHeight >= logs.scrollHeight - 8;
   const html = S.logs.length ? S.logs.map(logLine).join("") : `<div class="none">还没有日志。</div>`;
   if (logs._h !== html) { setHTML(logs, html); if (atBottom) logs.scrollTop = logs.scrollHeight; }
+  const n = S.net || {};
+  $("#proxyNow").textContent = n.mode === "app" ? `现在走这里填的代理 ${host(n.proxy)}。`
+    : n.mode === "system" ? `现在跟着系统代理走：${host(n.proxy)}。` : "现在是直连：设置里没填代理，系统代理也没开。";
+  renderXianyu();
   $("#version").textContent = `${S.app} v${S.version}`;
   $("#unblockAll").hidden = !S.blocked; $("#blockedN").textContent = S.blocked || 0;
   renderPhone();
@@ -1346,6 +1527,92 @@ function renderPhone() {
     : page ? "推送页上有大图、价格、成色和原链接，还能复制链接。手机打不开上面的地址时（比如在外面用流量），推送页也打不开，那就改成直接去原商品页。"
     : "推送点开直接去商品所在的网站。";
 }
+
+// —— 闲鱼账号 ——
+let xyPolling = false;
+function renderXianyu() {
+  const x = S.xianyu || {}, ws = S.config.watches;
+  const using = ws.filter(w => w.sources.includes("xianyu")).length, missing = ws.length - using;
+  if (x.logged_in) {
+    $("#xyTitle").textContent = `闲鱼已登录${x.nick ? "：" + x.nick : ""}`;
+    $("#xyDesc").textContent = (x.at ? `${dateText(x.at)}登录的。` : "")
+      + (using ? `${using} 个关注在搜闲鱼。` : "还没有关注在搜闲鱼：在关注里勾上「闲鱼」，或者点右边一次全加上。")
+      + "为了不被风控，同一个关注 5 分钟最多搜一次闲鱼。";
+    setHTML($("#xyActs"), (missing ? `<button class="primary" data-xy="add">${ico("plus")}给所有关注加上闲鱼</button>` : "")
+      + `<button class="ghost danger" data-xy="logout">退出登录</button>`);
+  } else {
+    $("#xyTitle").textContent = "闲鱼要登录才能搜";
+    $("#xyDesc").textContent = "用闲鱼 App 扫一下码就行。登录信息只存在这台电脑上，只拿来搜闲鱼。";
+    setHTML($("#xyActs"), xyPolling ? `<button data-xy="cancel">取消</button>`
+      : `<button class="primary" data-xy="login">${ico("phone")}扫码登录</button>`);
+  }
+  $("#xyQr").hidden = !xyPolling;
+}
+function xyStep(title, hint = "") { $("#xyStep").textContent = title; $("#xyStepHint").textContent = hint; }
+function xyShow(msg, ok, link) {
+  const box = $("#xyResult");
+  box.hidden = !msg;
+  if (!msg) return;
+  box.className = "xy-result " + (ok ? "ok" : "bad");
+  box.innerHTML = esc(msg) + (link ? ` <a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)}</a>` : "");
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function xyLogin() {
+  if (xyLogin.busy) return;   // 连点两下别开两个轮询
+  xyLogin.busy = true;
+  try { await xyLoginRun(); } finally { xyLogin.busy = false; }
+}
+async function xyLoginRun() {
+  xyShow("");
+  try {
+    const d = await api("/api/xianyu/qr", {});
+    $("#xyQrImg").src = "/api/qr.svg?text=" + encodeURIComponent(d.code);
+    xyStep("打开闲鱼 App，用「扫一扫」扫这个码", "扫完在手机上点确认登录。二维码几分钟后会过期。");
+    xyPolling = true; renderXianyu();
+  } catch (e) { xyShow(e.message, false); return; }
+  while (xyPolling) {
+    await sleep(1500);
+    if (!xyPolling) break;
+    let d;
+    try { d = await api("/api/xianyu/poll", {}); }
+    catch (e) { if (xyPolling) xyShow(e.message, false); xyPolling = false; break; }
+    if (!xyPolling) break;
+    if (d.status === "new") continue;
+    if (d.status === "scanned") { xyStep("扫好了，在手机上点「确认登录」"); continue; }
+    xyPolling = false;
+    if (d.status === "done") { xyShow(d.check, d.check_ok); toast("闲鱼登录好了"); }
+    else if (d.status === "expired") xyShow("二维码过期了，再点一次「扫码登录」。", false);
+    else if (d.status === "canceled") xyShow("在手机上取消了。", false);
+    else if (d.status === "verify") xyShow("闲鱼要先验证一下身份：用手机浏览器打开下面的链接验证完，再回来重新扫码。", false, d.url);
+    else if (d.status === "none") xyShow("扫码中断了，再点一次「扫码登录」。", false);
+    else xyShow(d.message || "没登录成功，再试一次", false);
+  }
+  renderXianyu();
+  refresh();
+}
+$("#xyPanel").addEventListener("click", async e => {
+  const b = e.target.closest("[data-xy]"); if (!b) return;
+  const act = b.dataset.xy;
+  try {
+    if (act === "login") await xyLogin();
+    else if (act === "cancel") { xyPolling = false; await api("/api/xianyu/cancel", {}); renderXianyu(); }
+    else if (act === "logout") {
+      if (!confirm("退出闲鱼登录？退出后闲鱼就搜不了了，关注里的「闲鱼」会一直报错，直到重新登录。")) return;
+      xyPolling = false;
+      await api("/api/xianyu/logout", {}); xyShow(""); toast("已退出"); refresh();
+    } else if (act === "add") {
+      const d = await api("/api/xianyu/add", {}); toast(`给 ${d.added} 个关注加上了闲鱼，马上开始扫`); refresh();
+    }
+  } catch (err) { toast(err.message, true); }
+});
+$("#xyCookieSave").onclick = async () => {
+  const text = $("#xyCookie").value.trim(), b = $("#xyCookieSave");
+  if (!text) { toast("先把 cookie 贴进来", true); return; }
+  b.disabled = true;
+  try { const d = await api("/api/xianyu/cookie", { cookie: text }); xyPolling = false; $("#xyCookie").value = ""; $("#xyCookieBox").open = false; xyShow(d.check, d.check_ok); refresh(); }
+  catch (err) { xyShow(err.message, false); }
+  finally { b.disabled = false; }
+};
 
 async function saveAccess(body, okMsg) {
   try { await api("/api/access", body); if (okMsg) toast(okMsg); await refresh(); return true; }
@@ -1481,6 +1748,23 @@ $("#unblockAll").onclick = async () => {
 $("#moreBtn").onclick = () => loadFeed(false);
 
 $("#addWatch").onclick = () => openWatch(null);
+$("#status").addEventListener("click", () => { if ($("#status").classList.contains("attn")) showTab("watches"); });
+$("#watchIssues").addEventListener("click", async e => {
+  const b = e.target.closest("[data-fix]"); if (!b) return;
+  const fix = b.dataset.fix;
+  if (fix === "netset") { showTab("settings"); $("#setProxy").focus(); return; }
+  if (fix === "xianyu") { showTab("settings"); $("#xyPanel").scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+  b.disabled = true;
+  try {
+    if (fix === "proxy") {
+      await api("/api/settings", { proxy: b.dataset.proxy });
+      $("#setProxy").value = b.dataset.proxy;
+      toast("改成走这个代理了，正在重新扫描");
+    } else toast("开始扫描");
+    await api("/api/scan", {});
+    setTimeout(refresh, 800);
+  } catch (err) { toast(err.message, true); b.disabled = false; }
+});
 $("#watchList").addEventListener("click", async e => {
   const el = e.target.closest("[data-act]"); if (!el) return;
   const id = el.closest("[data-id]").dataset.id, w = S.config.watches.find(x => x.id === id);
@@ -1507,6 +1791,7 @@ $("#gloss").addEventListener("click", e => {
   inp.focus();
 });
 $("#watchForm").addEventListener("input", e => { if (e.target.name === "price_min" || e.target.name === "price_max") updateCny(); });
+$("#srcChecks").addEventListener("change", updateSrcNote);
 $("#previewBtn").onclick = () => runPreview();
 $("#previewSrc").addEventListener("click", e => { const b = e.target.closest("[data-src]"); if (b) runPreview(b.dataset.src); });
 $("#watchForm").addEventListener("submit", async e => {
