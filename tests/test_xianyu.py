@@ -127,6 +127,39 @@ class AccountTests(unittest.TestCase):
         again.attach(self.store)
         self.assertEqual(again.token(again.jar), "fresh")
 
+    def test_expired_login_is_renewed_once(self):
+        """登录过期：拿出错前的 cookie 去 hasLogin 续一次，续上了接着搜；续不上才要重新扫码。"""
+        self.login(xianyu.make_cookie("cookie2", "old2"), xianyu.make_cookie("_m_h5_tk", "tok_1"))
+        calls = []
+
+        def fake_post(url, params=None, data=None, cookies=None, **kw):
+            calls.append((url, data))
+            if "hasLogin" in url:
+                cookies.set_cookie(xianyu.make_cookie("cookie2", "new2"))
+                return resp({"content": {"success": True}})
+            if len([c for c in calls if "hasLogin" not in c[0]]) == 1:
+                cookies.clear(".goofish.com", "/", "unb")      # 出错的响应把 unb 删了
+                return resp({"ret": ["FAIL_SYS_SESSION_EXPIRED::Session过期"]})
+            return resp(SEARCH_OK)
+
+        with mock.patch.object(xianyu, "account", self.acc), mock.patch.object(net, "post", fake_post):
+            items = xianyu.Xianyu().search(Query("GYBE"))
+        self.assertEqual(len(items), 2)
+        renew = [d for u, d in calls if "hasLogin" in u]
+        self.assertEqual(len(renew), 1)
+        self.assertEqual((renew[0]["hid"], renew[0]["hsiz"]), ("2200", "old2"))
+        self.assertTrue(self.acc.logged_in(), "unb 补回来了")
+        again = xianyu.Account()
+        again.attach(self.store)
+        self.assertEqual({c.name: c.value for c in again.jar}["cookie2"], "new2", "续上的 cookie 存下来了")
+
+        def refused(url, params=None, data=None, cookies=None, **kw):
+            if "hasLogin" in url:
+                return resp({"content": {"success": False}})
+            return resp({"ret": ["FAIL_SYS_SESSION_EXPIRED::Session过期"]})
+        with mock.patch.object(net, "post", refused), self.assertRaises(xianyu.NeedLogin):
+            self.acc.call(xianyu.SEARCH_API, {})
+
     def test_errors(self):
         self.login()
         cases = [
@@ -216,7 +249,7 @@ class QrLoginTests(unittest.TestCase):
             with self.subTest(action=action.__name__):
                 self.acc.logout()
 
-                def delayed_post(*args, **kwargs):
+                def delayed_post(*args, action=action, **kwargs):
                     reply = self.fake_post(*args, **kwargs)
                     action()   # 请求在途时，用户取消或退出登录
                     return reply

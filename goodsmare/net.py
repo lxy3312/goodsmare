@@ -202,7 +202,7 @@ def network_info() -> dict:
         options = {**_network, "routes": dict(_network["routes"])}
     rows = {}
     for group, values in samples.items():
-        def median(field):
+        def median(field, values=values):
             numbers = sorted(v[field] for v in values if field in v)
             return round(numbers[len(numbers) // 2], 3) if numbers else None
         measured = [v for v in values if "reused" in v]
@@ -354,13 +354,17 @@ def request(method: str, url: str, *, params: dict | None = None, headers: dict 
         opener = _opener_for(cookies, direct)
     finally:
         del _local.request_group
-    last_err: Exception | None = None
     started = time.perf_counter()
-    for attempt in range(retries + 1):
+    attempt = 0          # 第几次正常重试
+    sent = 0             # 实际发出去几次
+    fresh = False        # 这一次不用池子里的旧连接
+    stale_retried = False
+    while True:
         req = urllib.request.Request(url, data=body, headers=hdrs, method=method)
         timing = {}
+        sent += 1
         try:
-            with opener.open(req, timeout=timeout) as resp:
+            with transport.fresh_connection(fresh), opener.open(req, timeout=timeout) as resp:
                 raw = resp.read()
                 result = Response(resp.status, resp.geturl(), resp.headers, _decompress(raw, resp.headers))
                 timing = getattr(resp, "network_timing", {})
@@ -370,22 +374,29 @@ def request(method: str, url: str, *, params: dict | None = None, headers: dict 
                 raw = e.read() if e.fp else b""
                 result = Response(e.code, url, e.headers, _decompress(raw, e.headers))
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
-            last_err = e
+            fresh = False
+            # 复用的旧连接还没回应就断了：对方刚好关掉了闲置连接，请求没被处理。换新连接马上再发一次，
+            # 写请求（推送）也一样，不算在 retries 里；新连接上断掉的照旧不重发，免得重复推送。
+            if transport.died_while_idle(e) and not stale_retried:
+                stale_retried = fresh = True
+                continue
             if attempt < retries and not isinstance(getattr(e, "reason", e), ssl.SSLCertVerificationError):
+                attempt += 1
                 if not getattr(e, "reused_connection", False):
-                    time.sleep(1.5 * (attempt + 1))
+                    time.sleep(1.5 * attempt)
                 continue
             _record(group, time.perf_counter() - started, 0, getattr(e, "network_timing", {}), type(e).__name__)
             raise _unreachable(e, url, direct) from e
+        fresh = False
         _dump(url, result)
         if (result.status >= 500 and attempt < retries and not result.retry_after()
                 and not _looks_blocked(result.body[:3000].decode("utf-8", "ignore"))):
-            time.sleep(1.5 * (attempt + 1))
+            attempt += 1
+            time.sleep(1.5 * attempt)
             continue
-        result.network_timing = {**timing, "elapsed": time.perf_counter() - started, "attempts": attempt + 1}
+        result.network_timing = {**timing, "elapsed": time.perf_counter() - started, "attempts": sent}
         _record(group, result.network_timing["elapsed"], result.status, timing)
         return result
-    raise FetchError(str(last_err))
 
 
 def get(url: str, **kw) -> Response:

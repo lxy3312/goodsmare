@@ -101,6 +101,7 @@ def _message_data(h: Hit, ctx: Ctx, i: int = 0) -> dict:
         percent = round((1 - it.price / h.old_price) * 100) if h.old_price > 0 else 0
         drop = f"{money(h.old_price, it.source)} → {money(it.price, it.source)}，便宜 {money(h.old_price - it.price, it.source)}（{percent}%）"
     return {"title": it.title, "price": money(it.price, it.source),
+            "old_price": money(h.old_price, it.source) if drop else "",
             "cny": cny(it.price, ctx.rate) if not is_cny(it.source) else "", "drop": drop,
             "source": src_name(it.source), "watch": short_title(h.watch_name, 100), "keyword": short_title(keyword, 150),
             "extra": short_title(it.extra, 300), "published": date(it.created), "found": date(ctx.created_at),

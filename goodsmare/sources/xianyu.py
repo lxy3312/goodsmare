@@ -174,11 +174,39 @@ class Account:
                 return c.value.split("_")[0]
         return ""
 
+    def renew(self, jar, before: dict) -> bool:
+        """登录过期时续一次：网页版用 passport 的 hasLogin，拿长期登录凭证换一套新的 cookie。
+
+        before 是出错前的 cookie（出错的响应常常顺手把 unb 删了）。续上了返回 True；没法实测，续不上就照旧要重新扫码。
+        """
+        if not before.get("unb"):
+            return False
+        form = {"hid": before["unb"], "ltl": "true", "appName": "xianyu", "appEntrance": "web",
+                "_csrf_token": before.get("XSRF-TOKEN", ""), "umidToken": "", "hsiz": before.get("cookie2", ""),
+                "bizParams": "taobaoBizLoginFrom=web", "mainPage": "false", "isMobile": "false", "lang": "zh_CN",
+                "returnUrl": "", "fromSite": "77", "isIframe": "true", "documentReferer": ORIGIN + "/",
+                "defaultView": "hasLogin", "umidTag": "SERVER", "deviceId": before.get("cna", "")}
+        try:
+            d = net.post(PASSPORT + "/newlogin/hasLogin.do?appName=xianyu&fromSite=77", data=form, headers=HEADERS,
+                         cookies=jar, direct=True, retries=0).check("闲鱼登录").json()
+        except (net.FetchError, ValueError):
+            return False
+        if not (isinstance(d, dict) and (d.get("content") or {}).get("success")):
+            return False
+        if not any(c.name == "unb" and c.value for c in jar):
+            jar.set_cookie(make_cookie("unb", before["unb"]))   # unb 只是账号编号，被删了就补回去
+        with self.lock:
+            if self.jar is jar:
+                self.save()
+        return True
+
     def call(self, api: str, data: dict) -> dict:
         body = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
         with self.lock:
             jar = self.jar
-        for _ in range(2):
+        before = {c.name: c.value for c in jar}
+        renewed = False
+        for _ in range(4):
             t = str(int(time.time() * 1000))
             params = {"jsv": "2.7.2", "appKey": APP_KEY, "t": t, "sign": sign(self.token(jar), t, body), "v": "1.0",
                       "type": "originaljson", "accountSite": "xianyu", "dataType": "json", "timeout": "20000",
@@ -192,7 +220,11 @@ class Account:
                 return d
             if "TOKEN_EMPTY" in ret or "TOKEN_EXOIRED" in ret or "TOKEN_EXPIRED" in ret:
                 continue    # 这次的响应已经带了新的 _m_h5_tk，重签一次
-            raise _error(ret, d)
+            error = _error(ret, d)
+            if isinstance(error, NeedLogin) and not renewed and self.renew(jar, before):
+                renewed = True
+                continue    # 续上了，再查一次
+            raise error
         raise net.FetchError("闲鱼的接口令牌拿不到，过一会儿再试")
 
     # —— 扫码登录 ——

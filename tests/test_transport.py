@@ -21,6 +21,31 @@ from goodsmare.store import Store
 from goodsmare.web import App
 
 
+
+class DropSecondOnConnection(BaseHTTPRequestHandler):
+    """同一条连接上的第二个请求不回应、直接断开：像对方刚好在这时关掉了闲置连接。"""
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *args):
+        pass
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        self.served = getattr(self, "served", 0) + 1
+        if self.served > 1:
+            self.server.dropped += 1
+            self.connection.shutdown(socket.SHUT_RDWR)
+            self.close_connection = True
+            return
+        self.server.processed += 1
+        body = b'{"errcode":0}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
 class CountingServer(ThreadingHTTPServer):
     def __init__(self, handler):
         super().__init__(("127.0.0.1", 0), handler)
@@ -221,6 +246,22 @@ class TransportTests(unittest.TestCase):
         pool.put("key", connection, generation)
         connection.close.assert_called_once()
         self.assertIsNone(pool.take("key")[0])
+
+    def test_push_survives_a_connection_closed_while_idle(self):
+        """推送走了复用的旧连接，对方刚好把它关了：换新连接再发一次，推送不丢，对方也只处理一次。"""
+        server = ThreadingHTTPServer(("127.0.0.1", 0), DropSecondOnConnection)
+        server.processed = server.dropped = 0
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        url = f"http://127.0.0.1:{server.server_port}/hook"
+        try:
+            first = net.post(url, json_body={"n": 1})
+            second = net.post(url, json_body={"n": 2})
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual((first.status, second.status), (200, 200))
+        self.assertEqual((server.processed, server.dropped), (2, 1))
+        self.assertEqual(second.network_timing["attempts"], 2)
 
 
 OPENSSL = shutil.which("openssl") or ("C:/Program Files/Git/usr/bin/openssl.exe" if Path("C:/Program Files/Git/usr/bin/openssl.exe").exists() else None)

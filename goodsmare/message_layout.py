@@ -145,6 +145,9 @@ def sections(data: dict, settings: dict) -> list[dict]:
                 if key == "title":
                     size = settings["title_length"]
                     value = value if len(value) <= size else value[:size - 1] + "…"
+                # 降价的商品：没选「上新 / 降价」也没选「降价幅度」时，价格里自己标出来，不然和上新看不出区别
+                if key == "price" and data.get("old_price") and not {"drop", "status"} & set(settings["blocks"]):
+                    value = f"{value}（降价，原 {data['old_price']}）"
                 out.append({"key": key, "kind": "text", "text": f"{labels[key]}：{value}" if key in labels else value})
     return out
 

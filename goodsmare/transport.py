@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import collections
+import contextlib
 import hashlib
 import http.client
 import io
@@ -27,9 +28,12 @@ class ConnectionPool:
         self._idle = collections.OrderedDict()
         self._generation = 0
 
-    def take(self, key):
+    def take(self, key, fresh: bool = False):
+        """拿一条空闲连接；fresh 为真时不拿旧的，只返回当前代数（新连接用完照样能放回来）。"""
         now = time.monotonic()
         with self._lock:
+            if fresh:
+                return None, self._generation
             for old_key in list(self._idle):
                 live = []
                 for connection, at in self._idle[old_key]:
@@ -83,6 +87,25 @@ class ConnectionPool:
 
 POOL = ConnectionPool()
 atexit.register(POOL.clear)
+_tls = threading.local()
+
+
+@contextlib.contextmanager
+def fresh_connection(on: bool = True):
+    """这一段里的请求不用池子里的旧连接：旧连接刚被对方关掉、要重发时用。"""
+    previous = getattr(_tls, "fresh", False)
+    _tls.fresh = on
+    try:
+        yield
+    finally:
+        _tls.fresh = previous
+
+
+def died_while_idle(error: BaseException) -> bool:
+    """复用的旧连接还没收到任何回应就被对方断开：多半是对方刚好关掉了闲置连接，请求没有被处理，可以重发。"""
+    reason = getattr(error, "reason", error)
+    return bool(getattr(error, "reused_connection", False)) and isinstance(
+        reason, (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError, ConnectionAbortedError))
 _context = None
 _context_lock = threading.Lock()
 
@@ -111,7 +134,7 @@ class _PooledOpen:
         origin = urllib.parse.urlsplit(req.full_url).netloc
         key = (secure, req.host, tunnel, origin, hashlib.sha256(auth.encode()).digest(), self.session)
         keepalive = self.options["keepalive"] and headers.get("Connection", "").lower() != "close"
-        conn, generation = POOL.take(key) if keepalive else (None, -1)
+        conn, generation = POOL.take(key, getattr(_tls, "fresh", False)) if keepalive else (None, -1)
         reused = conn is not None
         connect_timeout = min(float(req.timeout), self.options["connect_timeout"])
         read_timeout = min(float(req.timeout), self.options["read_timeout"])

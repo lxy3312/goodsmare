@@ -1,9 +1,7 @@
 """消息积木：配置隔离、内容选择、渠道降级和拆分后链接；全部使用假网络。"""
 import copy
 import json
-import re
 import unittest
-from dataclasses import replace
 from email import message_from_string
 from unittest import mock
 
@@ -105,7 +103,7 @@ class LayoutTests(unittest.TestCase):
         for kind, fields in FIELDS.items():
             with self.subTest(kind=kind):
                 calls = []
-                def post(url, **kwargs):
+                def post(url, calls=calls, kind=kind, **kwargs):
                     calls.append(kwargs)
                     if kind == "pushme": return response("success")
                     return response({"code":1000 if kind == "wxpusher" else 200 if kind in ("pushplus","bark") else 0,
@@ -231,6 +229,22 @@ class LayoutTests(unittest.TestCase):
         batches = list(notify._message_batches(hs,ctx,"markdown",limit=1800,max_bytes=3500))
         self.assertEqual(batches[-1][0],1)
         self.assertIn("#i2",batches[-1][2])
+
+
+    def test_price_says_drop_when_drop_blocks_are_not_chosen(self):
+        """选了价格、没选「上新 / 降价」和「降价幅度」：降价的商品在价格里标出来，不然和上新看不出区别。"""
+        h = Hit(Item("yahoo_auction", "z1", "LP", 5200, "https://auctions.yahoo.co.jp/jp/auction/z1"), "w", "w", "drop", 6000)
+
+        def text(blocks):
+            settings = layout.normalize({"enabled": True, "blocks": blocks})
+            return layout.render(notify._message_data(h, Ctx(rate=0.05, message=settings)), settings, "wecom", "markdown")
+        self.assertIn("价格：¥5,200（降价，原 ¥6,000）", text(["price", "title"]))
+        self.assertNotIn("（降价", text(["price", "drop"]))
+        self.assertNotIn("（降价", text(["status", "price"]))
+        new = Hit(Item("mercari", "m1", "LP", 5200, "https://jp.mercari.com/item/m1"), "w", "w")
+        settings = layout.normalize({"enabled": True, "blocks": ["price"]})
+        self.assertNotIn("降价", layout.render(notify._message_data(new, Ctx(rate=0.05, message=settings)),
+                                              settings, "wecom", "markdown"))
 
 
 if __name__ == "__main__":
