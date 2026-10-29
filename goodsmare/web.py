@@ -71,7 +71,7 @@ class App:
     # —— 读 ——
     def state(self) -> dict:
         cfg = self.cfgstore.load()
-        net.set_proxy(cfg["proxy"])   # 刚启动、第一轮还没跑时，下面的「现在怎么连」也要准
+        net.configure(cfg)   # 刚启动、第一轮还没跑时，下面的「现在怎么连」也要准
         m = self.monitor
         statuses = self.store.statuses()
         return {
@@ -92,13 +92,14 @@ class App:
             "status": statuses,
             "problems": problems(cfg, statuses),
             "stats": self.store.watch_stats(),
-            "net": {**net.proxy_info(), "local": m.proxy_hint},
+            "net": {**net.proxy_info(), "local": m.proxy_hint, "performance": net.network_info()},
             "xianyu": xianyu_account.state(),
             "monitor": {"busy": m.busy, "live": m.live, "period": m.period or estimate_period(cfg),
                         "last_check_at": int(m.last_check_at), "last_cycle_at": int(m.last_cycle_at),
-                        "next_cycle_at": int(m.next_cycle_at), "now": int(time.time())},
+                        "next_cycle_at": int(m.next_cycle_at), "now": int(time.time()),
+                        "timing": m.timing_snapshot()},
             "rate": m.rate(cfg, fetch=False),
-            "logs": list(m.logs)[-60:],
+            "logs": m.log_snapshot(),
             "blocked": self.store.blocked_count(),
             "access": self.access_state(cfg),
         }
@@ -123,15 +124,22 @@ class App:
         if not watch["sources"]:
             raise ValueError("至少选一个网站")
 
+        previous = []
+
         def fn(cfg):
             for i, w in enumerate(cfg["watches"]):
                 if w["id"] == watch["id"]:
+                    previous.append(w)
                     cfg["watches"][i] = watch
                     break
             else:
                 cfg["watches"].insert(0, watch)
         self.cfgstore.update(fn)
-        self.monitor.trigger()
+        search_fields = ("keyword", "sources", "price_min", "price_max", "exclude", "must", "enabled")
+        if not previous or any(previous[0][k] != watch[k] for k in search_fields):
+            self.monitor.trigger(watch["id"])
+        else:
+            self.monitor.wake()
         return watch
 
     def delete_watch(self, body: dict) -> dict:
@@ -139,22 +147,36 @@ class App:
         self.cfgstore.update(lambda cfg: cfg.__setitem__(
             "watches", [w for w in cfg["watches"] if w["id"] != wid]))
         self.store.forget_watch(wid)
+        self.monitor.wake()
         return {}
 
     def save_settings(self, body: dict) -> dict:
-        allowed = ("interval", "request_gap", "proxy", "jpy_to_cny", "auto_rate", "buy")
+        allowed = ("interval", "request_gap", "proxy", "jpy_to_cny", "auto_rate", "buy", "push_mode")
 
         def fn(cfg):
             for k in allowed:
                 if k in body:
                     cfg[k] = body[k]
+            if "network" in body:
+                if not isinstance(body["network"], dict):
+                    raise ValueError("网络设置格式不正确")
+                incoming = body["network"].get("routes", {})
+                if not isinstance(incoming, dict):
+                    raise ValueError("网站线路设置格式不正确")
+                routes = {**cfg["network"]["routes"], **incoming}
+                cfg["network"] = {**cfg["network"], **body["network"], "routes": routes}
         cfg = self.cfgstore.update(fn)
-        net.set_proxy(cfg["proxy"])
+        net.configure(cfg)
         if "proxy" in body:
             self.monitor.proxy_hint = ""
         if "auto_rate" in body or "jpy_to_cny" in body:
             self.store.kv_set("rate_at", "0")
+        self.monitor.wake()
         return {}
+
+    def reset_network(self, body: dict) -> dict:
+        net.reset_connections()
+        return {"message": "已清空空闲连接和耗时统计；下一次请求重新连接"}
 
     def save_channel(self, body: dict) -> dict:
         ch = normalize_channel(body)
@@ -186,7 +208,7 @@ class App:
             (c for c in cfg["channels"] if c["id"] == body.get("id")), None)
         if ch is None:
             raise ValueError("找不到这个推送渠道")
-        net.set_proxy(cfg["proxy"])
+        net.configure(cfg)
         hits, where = self.monitor.test_hits(cfg)
         ctx = self.monitor.ctx(cfg, hits)
         notify.send(ch, hits, ctx)
@@ -328,9 +350,9 @@ class App:
         if src is None:
             raise ValueError("不认识的网站")
         cfg = self.cfgstore.load()
-        net.set_proxy(cfg["proxy"])
-        with src.lock:
-            items = src.search(query_of(watch))
+        net.configure(cfg)
+        with self.monitor._gate:
+            items = self.monitor.search(key, query_of(watch), cfg)
         rate = self.monitor.rate(cfg, fetch=False)
         return {"items": [dict(it.to_dict(), passes=passes(watch, it, rate)) for it in items[:60]],
                 "total": len(items)}
@@ -457,6 +479,7 @@ class App:
 POSTS = {
     "/api/watch": "save_watch", "/api/watch/delete": "delete_watch",
     "/api/settings": "save_settings",
+    "/api/network/reset": "reset_network",
     "/api/channel": "save_channel", "/api/channel/delete": "delete_channel",
     "/api/channel/test": "test_channel",
     "/api/message/settings": "save_message", "/api/message/preview": "preview_message",

@@ -124,7 +124,7 @@ def cmd_search(args):
     cfg = cfgstore.load()
     monitor = Monitor(cfgstore, store, echo=False)   # 顺带把闲鱼的登录态读进来
     rate = monitor.rate(cfg, fetch=False)
-    net.set_proxy(cfg["proxy"])
+    net.configure(cfg)
     if args.dump:
         net.dump_dir = Path(args.dump)
     key = _source(args.source)
@@ -133,7 +133,7 @@ def cmd_search(args):
     src = SOURCES[key]
     t = time.time()
     try:
-        items = src.search(query_of(watch))
+        items = monitor.search(key, query_of(watch), cfg)
     except net.FetchError as e:
         sys.exit(f"失败：{e}")
     print(f"{src.name} · 「{watch['keyword']}」 {len(items)} 件，用时 {time.time() - t:.1f}s\n")
@@ -189,7 +189,7 @@ def cmd_rm(args):
 def cmd_test_notify(args):
     cfgstore, store = _stores(args)
     cfg = cfgstore.load()
-    net.set_proxy(cfg["proxy"])
+    net.configure(cfg)
     if not cfg["channels"]:
         sys.exit("还没配推送渠道，去网页的「推送」里加一个。")
     monitor = Monitor(cfgstore, store)

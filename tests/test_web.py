@@ -437,7 +437,8 @@ class WebTests(unittest.TestCase):
             self.assertEqual(self.cfg.load()["proxy"], "http://127.0.0.1:7890")
             self.assertEqual(self.mon.proxy_hint, "")
             _, state = self.req("GET", "/api/state")
-            self.assertEqual(state["net"], {"mode": "app", "proxy": "http://127.0.0.1:7890", "local": ""})
+            self.assertEqual(state["net"], {"mode": "app", "proxy": "http://127.0.0.1:7890", "local": "",
+                                           "performance": {"keepalive": True, "groups": {}}})
         finally:
             self.req("POST", "/api/settings", {"proxy": ""})
 

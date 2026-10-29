@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import gzip
+import collections
+import contextlib
 import http.cookiejar
 import json
 import re
@@ -14,7 +16,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
+from email.utils import parsedate_to_datetime
 from pathlib import Path
+
+from . import transport
 
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -25,6 +30,13 @@ _lock = threading.Lock()
 _proxy = ""                  # 设置里填的代理（补全了 http://）；空着就跟系统代理走
 SYS_TTL = 10                 # 系统代理隔几秒重读一次
 _sys_cache: tuple | None = None
+_network = {"keepalive": True, "connect_timeout": 8.0, "read_timeout": 20.0,
+            "routes": {"domestic_push": "direct", "xianyu": "direct"}}
+_local = threading.local()
+_metrics: dict[str, collections.deque] = {}
+DOMESTIC_PUSH = ("wxpusher.zjiecode.com", "xtuis.cn", "iyuu.cn", "push.i-i.me", "pushplus.plus",
+                 "ftqq.com", "qyapi.weixin.qq.com", "oapi.dingtalk.com", "open.feishu.cn")
+OVERSEAS_PUSH = ("api.telegram.org", "discord.com", "discordapp.com", "api.pushover.net", "api.day.app", "ntfy.sh")
 # 直连连不上时，到本机这些端口找代理软件：Clash 7890、Clash Verge 7897、v2rayN 10809……
 LOCAL_PROXY_PORTS = (7890, 7897, 7891, 10809, 1087, 8889, 20171, 6152)
 
@@ -34,6 +46,10 @@ dump_dir: Path | None = None
 
 class FetchError(Exception):
     kind = "http"     # 给界面归类：net 连不上、blocked 被拦、http 其他 HTTP 错误、login 要登录
+
+    def __init__(self, message: str, *, retry_after: float = 0):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 class Unreachable(FetchError):
@@ -79,6 +95,15 @@ class Response:
     def json(self):
         return json.loads(self.text())
 
+    def retry_after(self) -> float:
+        value = next((v for k, v in (self.headers or {}).items() if k.lower() == "retry-after"), "")
+        try:
+            if str(value).strip().isdigit():
+                return float(int(value))
+            return max(0, parsedate_to_datetime(value).timestamp() - time.time())
+        except (TypeError, ValueError, OverflowError, AttributeError):
+            return 0
+
     def check(self, site: str) -> "Response":
         """非 2xx 就抛错；看得出是被拦的就抛 Blocked。"""
         if self.ok:
@@ -86,10 +111,10 @@ class Response:
         head = self.body[:3000].decode("utf-8", "ignore")
         if self.status in (403, 429, 503) and _looks_blocked(head):
             raise Blocked(f"{site} 拦下了请求（HTTP {self.status}，像是人机验证/限流），"
-                          "过一阵再试，或者在设置里换个代理")
+                          "已暂缓请求，稍后再试", retry_after=self.retry_after())
         if self.status == 429:
-            raise Blocked(f"{site} 说请求太频繁（HTTP 429），把扫描间隔调大一点")
-        raise FetchError(f"{site} 返回 HTTP {self.status}")
+            raise Blocked(f"{site} 说请求太频繁（HTTP 429），已暂缓请求", retry_after=self.retry_after())
+        raise FetchError(f"{site} 返回 HTTP {self.status}", retry_after=self.retry_after())
 
 
 def _looks_blocked(head: str) -> bool:
@@ -105,7 +130,95 @@ def set_proxy(proxy: str) -> None:
     if proxy and "://" not in proxy:
         proxy = "http://" + proxy
     with _lock:
+        changed = _proxy != proxy
         _proxy = proxy
+    if changed:
+        reset_connections()
+
+
+def configure(cfg: dict) -> None:
+    from .config import normalize_network
+    global _network
+    set_proxy(cfg.get("proxy", ""))
+    options = normalize_network(cfg.get("network"))
+    with _lock:
+        changed = options != _network
+        _network = options
+    if changed:
+        reset_connections()
+
+
+@contextlib.contextmanager
+def route(name: str):
+    previous = getattr(_local, "route", None)
+    _local.route = name
+    try:
+        yield
+    finally:
+        _local.route = previous
+
+
+def request_group(url: str) -> str:
+    explicit = getattr(_local, "route", None)
+    if explicit:
+        return explicit
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    for name, domains in (("domestic_push", DOMESTIC_PUSH), ("overseas_push", OVERSEAS_PUSH)):
+        if any(host == domain or host.endswith("." + domain) for domain in domains):
+            return name
+    return "other"
+
+
+def _route_proxies(group: str, direct: bool) -> dict:
+    with _lock:
+        choice = _network["routes"].get(group, "inherit")
+    if direct or group == "xianyu" or choice == "direct":
+        return {}
+    if choice == "inherit":
+        return _proxies()
+    return {"http": choice, "https": choice}
+
+
+def _redact_proxy(url: str) -> str:
+    try:
+        parts = urllib.parse.urlsplit(url if "://" in url else "http://" + url)
+        host = parts.hostname or ""
+        if ":" in host:
+            host = f"[{host}]"
+        return f"{parts.scheme}://{host}" + (f":{parts.port}" if parts.port else "")
+    except ValueError:
+        return "代理地址无效"
+
+
+def _record(group: str, elapsed: float, status: int, timing: dict, error: str = ""):
+    sample = {"seconds": elapsed, "status": status, "error": error, **timing}
+    with _lock:
+        _metrics.setdefault(group, collections.deque(maxlen=100)).append(sample)
+
+
+def network_info() -> dict:
+    with _lock:
+        samples = {key: list(values) for key, values in _metrics.items()}
+        options = {**_network, "routes": dict(_network["routes"])}
+    rows = {}
+    for group, values in samples.items():
+        def median(field):
+            numbers = sorted(v[field] for v in values if field in v)
+            return round(numbers[len(numbers) // 2], 3) if numbers else None
+        measured = [v for v in values if "reused" in v]
+        proxy = values[-1].get("proxy", "")
+        rows[group] = {"samples": len(values), "median": median("seconds"), "connect": median("connect"),
+                       "response": median("response"), "download": median("download"),
+                       "reuse_percent": round(100 * sum(v["reused"] for v in measured) / len(measured)) if measured else None,
+                       "errors": sum(bool(v["error"]) or v["status"] >= 400 for v in values),
+                       "last_status": values[-1]["status"], "proxy": _redact_proxy(proxy) if proxy else ""}
+    return {"keepalive": options["keepalive"], "groups": rows}
+
+
+def reset_connections():
+    transport.POOL.clear()
+    with _lock:
+        _metrics.clear()
 
 
 def system_proxies() -> dict:
@@ -161,7 +274,11 @@ def find_local_proxy(host: str) -> str:
 
 
 def _opener_for(cookies: http.cookiejar.CookieJar | None, direct: bool):
-    handlers: list = [urllib.request.ProxyHandler({} if direct else _proxies())]
+    group = getattr(_local, "request_group", getattr(_local, "route", None) or "other")
+    with _lock:
+        options = dict(_network)
+    handlers: list = [urllib.request.ProxyHandler(_route_proxies(group, direct)),
+                     transport.HTTPHandler(options, cookies), transport.HTTPSHandler(options, cookies)]
     if cookies is not None:
         handlers.append(urllib.request.HTTPCookieProcessor(cookies))
     return urllib.request.build_opener(*handlers)
@@ -187,18 +304,18 @@ def _reason(e: BaseException) -> str:
 
 def _unreachable(e: BaseException, url: str, direct: bool) -> Unreachable:
     parts = urllib.parse.urlsplit(url)
-    via = "" if direct else _proxies().get(parts.scheme, "")
+    via = _route_proxies(request_group(url), direct).get(parts.scheme, "")
     reason = _reason(e)
     if via and isinstance(getattr(e, "reason", e), ConnectionRefusedError):
-        msg = f"代理 {via} 连不上（连接被拒绝），代理软件开着吗"
+        msg = f"代理 {_redact_proxy(via)} 连不上（连接被拒绝），代理软件开着吗"
     else:
         msg = f"连不上 {parts.netloc}（{reason}）"
     return Unreachable(msg, parts.hostname or "")
 
 
 def request(method: str, url: str, *, params: dict | None = None, headers: dict | None = None,
-            json_body=None, data: bytes | dict | None = None, timeout: float = 20,
-            retries: int = 1, cookies: http.cookiejar.CookieJar | None = None,
+            json_body=None, data: bytes | dict | None = None, timeout: float | None = None,
+            retries: int | None = None, cookies: http.cookiejar.CookieJar | None = None,
             direct: bool = False) -> Response:
     """cookies：要记住 cookie 的网站自己带一个 CookieJar 来，别的网站照旧不存。
 
@@ -225,27 +342,48 @@ def request(method: str, url: str, *, params: dict | None = None, headers: dict 
     elif data is not None:
         body = data
 
+    # 写请求默认不重发，避免服务端已受理但响应断线时造成重复通知。
+    if retries is None:
+        retries = 1 if method.upper() in ("GET", "HEAD", "OPTIONS") else 0
+    if timeout is None:
+        with _lock:
+            timeout = max(_network["connect_timeout"], _network["read_timeout"])
+    group = request_group(url)
+    _local.request_group = group
+    try:
+        opener = _opener_for(cookies, direct)
+    finally:
+        del _local.request_group
     last_err: Exception | None = None
-    opener = _opener_for(cookies, direct)
+    started = time.perf_counter()
     for attempt in range(retries + 1):
         req = urllib.request.Request(url, data=body, headers=hdrs, method=method)
+        timing = {}
         try:
             with opener.open(req, timeout=timeout) as resp:
                 raw = resp.read()
                 result = Response(resp.status, resp.geturl(), resp.headers, _decompress(raw, resp.headers))
+                timing = getattr(resp, "network_timing", {})
         except urllib.error.HTTPError as e:
-            raw = e.read() if e.fp else b""
-            result = Response(e.code, url, e.headers, _decompress(raw, e.headers))
+            with e:
+                timing = getattr(e.fp, "network_timing", {})
+                raw = e.read() if e.fp else b""
+                result = Response(e.code, url, e.headers, _decompress(raw, e.headers))
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
             last_err = e
-            if attempt < retries:
-                time.sleep(1.5 * (attempt + 1))
+            if attempt < retries and not isinstance(getattr(e, "reason", e), ssl.SSLCertVerificationError):
+                if not getattr(e, "reused_connection", False):
+                    time.sleep(1.5 * (attempt + 1))
                 continue
+            _record(group, time.perf_counter() - started, 0, getattr(e, "network_timing", {}), type(e).__name__)
             raise _unreachable(e, url, direct) from e
         _dump(url, result)
-        if result.status >= 500 and attempt < retries:
+        if (result.status >= 500 and attempt < retries and not result.retry_after()
+                and not _looks_blocked(result.body[:3000].decode("utf-8", "ignore"))):
             time.sleep(1.5 * (attempt + 1))
             continue
+        result.network_timing = {**timing, "elapsed": time.perf_counter() - started, "attempts": attempt + 1}
+        _record(group, result.network_timing["elapsed"], result.status, timing)
         return result
     raise FetchError(str(last_err))
 

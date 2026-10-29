@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import os
 import threading
 import uuid
+import urllib.parse
 from pathlib import Path
 
 from . import message_layout
@@ -16,13 +18,20 @@ DEFAULT_SOURCES = ["mercari", "yahoo_auction", "yahoo_flea", "rakuma", "surugaya
 ALL_SOURCES = DEFAULT_SOURCES + ["xianyu"]
 
 MIN_INTERVAL = 10
+PRIORITIES = {"high": 2.0, "normal": 1.0, "low": 0.5}
+PUSH_MODES = ("instant", "priority", "batch")
+NETWORK_DEFAULTS = {"keepalive": True, "connect_timeout": 8.0, "read_timeout": 20.0,
+                    "routes": {"domestic_push": "direct"}}
+NETWORK_ROUTES = ALL_SOURCES + ["domestic_push", "overseas_push"]
 
 DEFAULTS = {
     "interval": 60,         # 同一个关注在同一个网站多久查一次（秒）；关注多时还受下面的请求间隔限制
     "request_gap": 3.0,     # 同一个网站两次请求之间至少隔多少秒，别把人家打挂、也别被封
+    "push_mode": "instant", # 即时推送 / 重点即时、其余合并 / 全部合并
     "buy": "",              # 推送和上新页里点商品去哪：空 = 原网页，doorzo = 任意门
     "message": None,         # 空着用各渠道原有排版；消息积木可统一配置，也可在渠道上单独覆盖
     "proxy": "",            # 例如 http://127.0.0.1:7890 ；留空则用系统环境变量
+    "network": copy.deepcopy(NETWORK_DEFAULTS),
     "jpy_to_cny": 0.048,    # 自动汇率拿不到时用这个
     "auto_rate": True,
     # host 为 0.0.0.0 时对局域网开放（必须有 token）；public_url 是手机打开本程序用的地址，
@@ -43,6 +52,7 @@ WATCH_DEFAULTS = {
     "exclude": [],          # 标题里出现任何一个就不要
     "price_drop": False,    # 已经见过的商品降价了也提醒
     "enabled": True,
+    "priority": "normal",  # 同站请求预算不变，重点关注分到更多检查机会
 }
 
 CHANNEL_DEFAULTS = {"id": "", "type": "", "name": "", "enabled": True}
@@ -63,7 +73,7 @@ def _as_list(v) -> list:
 def _as_int(v) -> int:
     try:
         return max(0, int(float(v or 0)))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return 0
 
 
@@ -80,6 +90,7 @@ def normalize_watch(w: dict) -> dict:
     out["exclude"] = _as_list(out["exclude"])
     out["price_drop"] = bool(out["price_drop"])
     out["enabled"] = bool(out["enabled"])
+    out["priority"] = out["priority"] if isinstance(out["priority"], str) and out["priority"] in PRIORITIES else "normal"
     return out
 
 
@@ -97,6 +108,38 @@ def normalize_channel(c: dict) -> dict:
     return out
 
 
+def normalize_network(value) -> dict:
+    out = copy.deepcopy(NETWORK_DEFAULTS)
+    if not isinstance(value, dict):
+        value = {}
+    out["keepalive"] = bool(value.get("keepalive", True))
+    for key, minimum, maximum in (("connect_timeout", 2, 30), ("read_timeout", 3, 60)):
+        try:
+            number = float(value.get(key, out[key]))
+            if math.isfinite(number):
+                out[key] = max(minimum, min(maximum, number))
+        except (ValueError, TypeError, OverflowError):
+            pass
+    routes = value.get("routes")
+    if isinstance(routes, dict):
+        for key, route in routes.items():
+            if key not in NETWORK_ROUTES or key == "xianyu":
+                continue
+            route = str(route or "inherit").strip()
+            if route not in ("inherit", "direct"):
+                if "://" not in route:
+                    route = "http://" + route
+                try:
+                    parsed = urllib.parse.urlsplit(route)
+                    if parsed.scheme != "http" or not parsed.hostname or not parsed.port or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+                        raise ValueError
+                except ValueError:
+                    raise ValueError("网站专用代理请填 HTTP 代理地址和端口，例如 http://127.0.0.1:7890") from None
+            out["routes"][key] = route
+    out["routes"]["xianyu"] = "direct"
+    return out
+
+
 def normalize(cfg: dict) -> dict:
     out = copy.deepcopy(DEFAULTS)
     for k, v in (cfg or {}).items():
@@ -106,20 +149,26 @@ def normalize(cfg: dict) -> dict:
             out[k] = v
     try:
         out["interval"] = max(MIN_INTERVAL, int(float(out["interval"])))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         out["interval"] = DEFAULTS["interval"]
+    out["push_mode"] = out["push_mode"] if out["push_mode"] in PUSH_MODES else DEFAULTS["push_mode"]
     out["buy"] = out["buy"] if out["buy"] in ("", "doorzo") else ""
     out["message"] = message_layout.normalize(out["message"])
     try:
         out["request_gap"] = max(0.5, float(out["request_gap"]))
+        if not math.isfinite(out["request_gap"]):
+            raise ValueError
     except (TypeError, ValueError):
         out["request_gap"] = DEFAULTS["request_gap"]
     try:
         out["jpy_to_cny"] = float(out["jpy_to_cny"]) or DEFAULTS["jpy_to_cny"]
+        if not math.isfinite(out["jpy_to_cny"]) or out["jpy_to_cny"] <= 0:
+            raise ValueError
     except (TypeError, ValueError):
         out["jpy_to_cny"] = DEFAULTS["jpy_to_cny"]
     out["auto_rate"] = bool(out["auto_rate"])
     out["proxy"] = str(out["proxy"] or "").strip()
+    out["network"] = normalize_network(out["network"])
     web = out["web"]
     web["host"] = str(web.get("host") or "127.0.0.1").strip()
     web["token"] = str(web.get("token") or "").strip()

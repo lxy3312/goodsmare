@@ -312,6 +312,20 @@ body.selecting .cell.sel .card { border-color: transparent; box-shadow: 0 0 0 2.
 
 /* —— 设置 —— */
 .settings-grid { display: grid; grid-template-columns: minmax(330px, 470px) minmax(0, 1fr); gap: 20px; align-items: stretch; }
+.choice-grid, .speed-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.choice { display: grid; align-content: start; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; min-width: 0; }
+.choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft, #f1f5ff); }
+.choice input[type=radio] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.choice small { font-size: 11px; line-height: 1.5; color: var(--muted); }
+.speed-grid { margin-bottom: 10px; }
+.speed-card { padding: 16px; display: grid; gap: 6px; }
+.speed-card b { font-size: 22px; }
+.speed-card span { font-size: 12px; color: var(--muted); }
+.route-card { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.route-card .route-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.route-card select { width: 145px; flex: 0 0 auto; }
+.route-card .route-stat { color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-line; }
+#networkRoutes { display: grid; gap: 10px; margin-top: 12px; }
 .form-card { display: grid; gap: 22px; padding: 22px; }
 .sec { display: grid; gap: 14px; }
 .sec + .sec { padding-top: 22px; border-top: 1px solid var(--line); }
@@ -623,19 +637,44 @@ body.selecting main { padding-bottom: 140px; }
     <div class="page-head">
       <div><h2>设置</h2><p>保存后，从下一轮扫描开始生效。</p></div>
     </div>
+    <div class="speed-grid">
+      <div class="panel speed-card"><span>单次查询耗时 · 中位数</span><b id="scanLatency">—</b></div>
+      <div class="panel speed-card"><span>发现 → 渠道受理 · 中位数</span><b id="pushLatency">—</b></div>
+      <div class="panel speed-card"><span>待发批次 / 等待合并商品</span><b id="pushPending">0 / 0</b></div>
+    </div>
+    <p class="hint" id="speedHint">统计本次运行最近 100 次查询和成功推送；渠道受理时间不等于手机显示时间。</p>
+    <div class="hint" id="cooldownHint" style="margin-bottom:14px" hidden></div>
     <div class="settings-grid">
       <div class="panel form-card">
         <div class="sec">
           <div class="sec-title"><svg class="i" aria-hidden="true"><use href="#i-clock"/></svg>扫描节奏</div>
           <div class="row2">
-            <label class="field"><span>每个关注多久查一次（秒）</span><input type="number" id="setInterval" min="10"><small>最少 10。每个网站各查各的；关注多时，一个网站轮一圈要「关注数 × 同站请求间隔」。</small></label>
+            <label class="field"><span>基础检查间隔（秒）</span><input type="number" id="setInterval" min="10"><small>最少 10。重点关注分到更多检查机会，低频关注适当放慢；实际还受关注数、网络耗时和网站限制影响。</small></label>
             <label class="field"><span>同站请求间隔（秒）</span><input type="number" id="setGap" min="0.5" step="0.5"><small>同一个网站两次请求之间至少等多久。太小容易被封；骏河屋、Mandarake、闲鱼自己会更慢。</small></label>
           </div>
+        </div>
+        <div class="sec">
+          <div class="sec-title"><svg class="i" aria-hidden="true"><use href="#i-bell"/></svg>推送速度</div>
+          <div class="choice-grid" role="group" aria-label="推送速度">
+            <label class="choice"><input type="radio" name="pushMode" value="instant" checked><b>全部即时</b><small>发现后立即发送</small></label>
+            <label class="choice"><input type="radio" name="pushMode" value="priority"><b>重点即时</b><small>其余商品合并发送</small></label>
+            <label class="choice"><input type="radio" name="pushMode" value="batch"><b>合并发送</b><small>等 3 秒，最多 12 秒</small></label>
+          </div>
+          <p class="hint">各推送渠道独立排队。即时模式会增加通知条数，不会增加购物网站的检查次数。</p>
         </div>
         <div class="sec">
           <div class="sec-title"><svg class="i" aria-hidden="true"><use href="#i-globe"/></svg>网络</div>
           <label class="field"><span>代理</span><input type="text" id="setProxy" placeholder="例如 http://127.0.0.1:7890，留空就跟着系统代理走"><small>留空时跟着系统代理走：Clash 之类的软件打开「系统代理」就行，开关随时拨都能跟上。煤炉、雅虎拍卖、乐天Rakuma 在国内要走代理。支持 HTTP 代理（Clash 的混合端口可以）。闲鱼不走代理。</small></label>
           <div class="hint" id="proxyNow" style="margin-top:-6px"></div>
+          <p class="hint" id="networkReload" hidden>网络模块已更新，重启程序后才能启用下面的新设置。</p>
+          <label class="row-switch"><span>复用网络连接<small>减少重复连接和加密握手</small></span><span class="switch"><input type="checkbox" id="setKeepAlive" checked><span></span></span></label>
+          <div class="row2">
+            <label class="field"><span>连接超时（秒）</span><input type="number" id="setConnectTimeout" min="2" max="30" step="1"><small>线路连不上时尽快退出</small></label>
+            <label class="field"><span>响应超时（秒）</span><input type="number" id="setReadTimeout" min="3" max="60" step="1"><small>为网站返回数据留出时间</small></label>
+          </div>
+          <details><summary>各网站线路与耗时</summary><p class="hint">各站可跟随全局、直连或使用专用 HTTP 代理。国内推送默认直连；闲鱼固定直连。统计最近 100 次请求。</p><div id="networkRoutes"></div></details>
+          <button type="button" class="ghost sm" id="resetNetwork">重新连接当前线路</button>
+          <p class="hint">在代理软件中切换节点后，可点“重新连接”。这会清空空闲连接和耗时统计，网站冷却仍然保留。</p>
         </div>
         <div class="sec">
           <div class="sec-title"><svg class="i" aria-hidden="true"><use href="#i-coin"/></svg>汇率</div>
@@ -731,6 +770,14 @@ body.selecting main { padding-bottom: 140px; }
         <div class="gloss" id="gloss"></div>
       </div>
       <label class="field"><span>显示名称</span><input type="text" name="name" placeholder="不填就用关键词" autocomplete="off"></label>
+      <div class="field"><span>关注优先级</span>
+        <div class="choice-grid" role="group" aria-label="关注优先级">
+          <label class="choice"><input type="radio" name="priority" value="high"><b>重点</b><small>优先检查，适合抢上新</small></label>
+          <label class="choice"><input type="radio" name="priority" value="normal" checked><b>普通</b><small>均衡分配检查机会</small></label>
+          <label class="choice"><input type="radio" name="priority" value="low"><b>低频</b><small>减少检查，让重点更快</small></label>
+        </div>
+        <small>同站请求预算不变；建议只把最想要的几个设为重点。网站冷却和最短周期仍然有效。</small>
+      </div>
       <div class="field"><span>在哪些网站找</span><div class="sites" id="srcChecks"></div><small id="srcNote" hidden></small></div>
       <div class="row2">
         <label class="field"><span>最低价（日元）</span><input type="number" name="price_min" min="0" placeholder="不限"><small class="cnyHint"></small></label>
@@ -935,7 +982,7 @@ function renderStatus() {
   if (m.live) {   // 每个网站各自不停地轮着查，没有「下一轮」
     bar.style.setProperty("--p", "0%");
     set(bad ? "warn" : "ok live", bad ? `<span class="mid">监控中 · </span><span class="warn-t">${bad} 个网站没搜成</span>`
-      : `<span class="mid">监控中</span><span class="long">${m.period ? ` · 约 ${m.period} 秒查一遍` : ""}</span>`, "");
+      : `<span class="mid">监控中</span><span class="long">${m.period ? ` · 调度估算 ${m.period} 秒起` : ""}</span>`, "");
     return;
   }
   if (m.busy) { set("ok live", "扫描中…", ""); return; }
@@ -1274,7 +1321,7 @@ function issuesHTML() {
   for (const p of list.filter(p => p.kind !== "net")) {
     const name = `<b>${esc(srcName(p.source))}</b>`, code = (/HTTP \d+/.exec(p.message) || [""])[0];
     if (p.kind === "login") rows.push(issueRow(`${name} 要先登录${only(p)}`, "用闲鱼 App 扫一下码就能搜。", `<button class="primary sm" data-fix="xianyu">去登录</button>`));
-    else if (p.kind === "blocked" && code) rows.push(issueRow(`${name} 拦下了请求（${code}）${only(p)}`, "像是人机验证或者限流，一般过一阵自己就好；一直这样的话把扫描间隔调大，或者换个代理节点。"));
+    else if (p.kind === "blocked" && code) rows.push(issueRow(`${name} 拦下了请求（${code}）${only(p)}`, "程序会等待冷却，剩余时间可在设置页查看。持续出现时降低检查频率并检查账号状态；立即扫描不会清掉冷却。"));
     else if (p.kind === "blocked") rows.push(issueRow(`${name} 拦下了请求${only(p)}`, esc(p.message)));
     else if (p.kind === "parse") rows.push(issueRow(`${name} 解析不出商品${only(p)}`, "网页能打开，但一件商品都没认出来，可能是网站改版了。"));
     else rows.push(issueRow(`${name} 出错了${only(p)}`, esc(p.message)));
@@ -1298,7 +1345,7 @@ function renderWatches() {
   }
   setHTML(box, ws.map(w => `<div class="panel watch${w.enabled ? "" : " off"}" data-id="${esc(w.id)}">
       <div class="watch-head">
-        <div class="watch-title"><b>${esc(w.name)}</b>${w.name !== w.keyword ? `<span class="kw" lang="ja">${ico("search")}${esc(w.keyword)}</span>` : ""}</div>
+        <div class="watch-title"><b>${esc(w.name)}</b>${w.priority === "high" ? '<span class="tag">重点</span>' : w.priority === "low" ? '<span class="tag">低频</span>' : ""}${w.name !== w.keyword ? `<span class="kw" lang="ja">${ico("search")}${esc(w.keyword)}</span>` : ""}</div>
         <div class="spacer"></div>
         <label class="switch" title="${w.enabled ? "暂停" : "启用"}"><input type="checkbox" data-act="toggle" aria-label="启用或暂停" ${w.enabled ? "checked" : ""}><span></span></label>
       </div>
@@ -1329,6 +1376,7 @@ function openWatch(w) {
   f.must.value = words(w?.must);
   f.exclude.value = words(w?.exclude);
   f.price_drop.checked = !!w?.price_drop;
+  f.priority.value = w?.priority || "normal";
   f.enabled.checked = w ? w.enabled : true;
   // 新建时默认勾上能搜的网站；闲鱼没登录就先不勾
   const chosen = w?.sources || S.sources.filter(s => !s.login || s.ready).map(s => s.key);
@@ -1350,6 +1398,7 @@ function watchFromForm() {
     price_min: f.price_min.value || 0, price_max: f.price_max.value || 0,
     must: f.must.value, exclude: f.exclude.value,
     price_drop: f.price_drop.checked, enabled: f.enabled.checked,
+    priority: f.priority.value,
   };
 }
 
@@ -1357,7 +1406,7 @@ function updateSrcNote() {
   const on = $$("#srcChecks input:checked").map(i => i.value), note = $("#srcNote");
   const xy = on.includes("xianyu"), info = srcInfo("xianyu");
   note.hidden = !xy;
-  if (xy) note.textContent = (info.ready ? "" : "闲鱼还没登录：先到「设置 → 闲鱼账号」扫码，不然闲鱼这一项会一直报错。")
+  if (xy) note.textContent = (info.ready ? "" : "闲鱼还没登录：先到「设置 → 闲鱼账号」扫码，否则闲鱼检查会暂停。")
     + "闲鱼标的是人民币，和下面的价格区间比的时候按汇率换成日元；闲鱼上中文标题多，关键词可以另建一个中文的。";
 }
 
@@ -1481,12 +1530,31 @@ function logLine(line) {
 
 function renderSettings() {
   const c = S.config;
+  const networkReady = !!S.net?.performance;
+  if (renderSettings.networkReady !== networkReady) renderSettings.done = false;
+  renderSettings.networkReady = networkReady;
   if (!renderSettings.done) {   // 只在第一次填，免得轮询把正在改的值冲掉
     $("#setInterval").value = c.interval; $("#setGap").value = c.request_gap;
+    const mode = $(`input[name=pushMode][value="${c.push_mode || "instant"}"]`);
+    if (mode) mode.checked = true;
     $("#setProxy").value = c.proxy; $("#setRate").value = c.jpy_to_cny; $("#setAutoRate").checked = c.auto_rate;
+    renderNetworkForm(c.network || {});
     renderSettings.done = true;
   }
   $("#rateHint").textContent = c.auto_rate ? `当前自动汇率：1 日元 ≈ ${S.rate.toFixed(4)} 元（拿不到时用左边这个）` : "";
+  const timing = S.monitor.timing || {};
+  $("#scanLatency").textContent = timing.scan_median == null ? "—" : `${timing.scan_median.toFixed(2)} 秒`;
+  $("#pushLatency").textContent = timing.latency_median == null ? "—" : `${timing.latency_median.toFixed(2)} 秒`;
+  $("#pushPending").textContent = `${timing.pending || 0} / ${timing.queued_hits || 0}`;
+  const cooldowns = Object.entries(timing.cooldowns || {}).map(([k, v]) => v.login_required
+    ? `${srcName(k)}：等待重新登录` : `${srcName(k)}：冷却剩余 ${Math.max(0, Math.ceil(v.until - S.monitor.now))} 秒`);
+  $("#cooldownHint").hidden = !cooldowns.length;
+  $("#cooldownHint").textContent = cooldowns.join("；");
+  renderNetworkStats();
+  $("#networkReload").hidden = networkReady;
+  for (const el of $$("#setKeepAlive, #setConnectTimeout, #setReadTimeout, #networkRoutes input, #networkRoutes select, #resetNetwork")) {
+    el.disabled = !networkReady || (el.matches("select") && el.closest("[data-route]")?.dataset.route === "xianyu");
+  }
   const logs = $("#logs"), atBottom = logs.scrollTop + logs.clientHeight >= logs.scrollHeight - 8;
   const html = S.logs.length ? S.logs.map(logLine).join("") : `<div class="none">还没有日志。</div>`;
   if (logs._h !== html) { setHTML(logs, html); if (atBottom) logs.scrollTop = logs.scrollHeight; }
@@ -1497,6 +1565,48 @@ function renderSettings() {
   $("#version").textContent = `${S.app} v${S.version}`;
   $("#unblockAll").hidden = !S.blocked; $("#blockedN").textContent = S.blocked || 0;
   renderPhone();
+}
+
+function networkGroups() {
+  return [...S.sources.map(s => [s.key, s.name]), ["domestic_push", "国内推送"], ["overseas_push", "海外推送"]];
+}
+
+function renderNetworkForm(network) {
+  $("#setKeepAlive").checked = network.keepalive !== false;
+  $("#setConnectTimeout").value = network.connect_timeout || 8;
+  $("#setReadTimeout").value = network.read_timeout || 20;
+  $("#networkRoutes").innerHTML = networkGroups().map(([key, label]) => {
+    const route = key === "xianyu" ? "direct" : (network.routes?.[key] || "inherit");
+    const mode = ["inherit", "direct"].includes(route) ? route : "custom";
+    return `<div class="route-card" data-route="${esc(key)}"><div class="route-top"><b>${esc(label)}</b>
+      <select aria-label="${esc(label)}线路" ${key === "xianyu" ? "disabled" : ""}>
+      ${[["inherit","跟随全局"],["direct","直连"],["custom","专用代理"]].map(([v,t])=>`<option value="${v}" ${mode === v ? "selected" : ""}>${t}</option>`).join("")}</select></div>
+      <input type="text" aria-label="${esc(label)}代理地址" placeholder="http://127.0.0.1:7890" value="${esc(mode === "custom" ? route : "")}" ${mode === "custom" ? "" : "hidden"}>
+      <div class="route-stat">等待请求数据</div></div>`;
+  }).join("");
+}
+
+function readNetworkForm() {
+  const routes = {};
+  for (const row of $$("#networkRoutes [data-route]")) {
+    const mode = $("select", row).value;
+    const proxy = $("input", row).value.trim();
+    if (mode === "custom" && !proxy) throw Error("专用代理需要填写地址和端口");
+    routes[row.dataset.route] = mode === "custom" ? proxy : mode;
+  }
+  return {keepalive: $("#setKeepAlive").checked, connect_timeout: Number($("#setConnectTimeout").value),
+    read_timeout: Number($("#setReadTimeout").value), routes};
+}
+
+function renderNetworkStats() {
+  const metrics = S.net?.performance?.groups || {};
+  for (const row of $$("#networkRoutes [data-route]")) {
+    const m = metrics[row.dataset.route], el = $(".route-stat", row);
+    if (!m) { el.textContent = "等待请求数据"; continue; }
+    const sec = v => v == null ? "—" : `${v.toFixed(2)}s`;
+    el.textContent = `总耗时 ${sec(m.median)} · 连接 ${sec(m.connect)} · 响应 ${sec(m.response)} · 下载 ${sec(m.download)}\n`
+      + `复用 ${m.reuse_percent == null ? "—" : m.reuse_percent + "%"} · 错误 ${m.errors}/${m.samples} · ${m.proxy ? "代理 " + m.proxy : "直连"}`;
+  }
 }
 
 function renderPhone() {
@@ -1597,7 +1707,7 @@ $("#xyPanel").addEventListener("click", async e => {
     if (act === "login") await xyLogin();
     else if (act === "cancel") { xyPolling = false; await api("/api/xianyu/cancel", {}); renderXianyu(); }
     else if (act === "logout") {
-      if (!confirm("退出闲鱼登录？退出后闲鱼就搜不了了，关注里的「闲鱼」会一直报错，直到重新登录。")) return;
+      if (!confirm("退出闲鱼登录？退出后闲鱼检查会暂停，重新登录后恢复。")) return;
       xyPolling = false;
       await api("/api/xianyu/logout", {}); xyShow(""); toast("已退出"); refresh();
     } else if (act === "add") {
@@ -1662,7 +1772,7 @@ document.addEventListener("click", e => {
 });
 
 $("#scanBtn").onclick = async () => {
-  try { await api("/api/scan", {}); toast("开始扫描"); setTimeout(refresh, 800); } catch (e) { toast(e.message, true); }
+  try { await api("/api/scan", {}); toast("已请求扫描，网站冷却和最短周期仍然有效"); setTimeout(refresh, 800); } catch (e) { toast(e.message, true); }
 };
 
 $("#feedChips").addEventListener("click", e => {
@@ -1840,10 +1950,19 @@ $("#saveSettings").onclick = async () => {
   try {
     await api("/api/settings", {
       interval: Number($("#setInterval").value), request_gap: Number($("#setGap").value),
+      push_mode: $("input[name=pushMode]:checked")?.value || "instant",
       proxy: $("#setProxy").value.trim(), jpy_to_cny: Number($("#setRate").value), auto_rate: $("#setAutoRate").checked,
+      network: S.net?.performance ? readNetworkForm() : undefined,
     });
     renderSettings.done = false; toast("已保存"); refresh();
   } catch (e) { toast(e.message, true); }
+};
+$("#networkRoutes").addEventListener("change", e => {
+  if (e.target.matches("select")) $("input", e.target.closest("[data-route]")).hidden = e.target.value !== "custom";
+});
+$("#resetNetwork").onclick = async () => {
+  try { const result = await api("/api/network/reset", {}); toast(result.message); refresh(); }
+  catch (e) { toast(e.message, true); }
 };
 $("#lanSwitch").onchange = async e => {
   const sw = e.target, on = sw.checked;

@@ -282,7 +282,11 @@ class MonitorTests(unittest.TestCase):
         self.src.pages.append(net.Blocked("煤炉 拦下了请求（HTTP 403）"))
         self.mon.run_cycle()
         self.assertEqual(self.status()["kind"], "blocked")
-        self.cycle([item(1)])
+        self.src.pages.append([item(1)])
+        self.mon.run_cycle()
+        self.assertEqual(self.status()["kind"], "blocked", "冷却期间不再请求")
+        with mock.patch("goodsmare.monitor.time.time", return_value=time.time() + 61):
+            self.mon.run_cycle()
         self.assertEqual((self.status()["ok"], self.status()["kind"]), (True, ""))
 
     def test_old_status_table_gets_kind(self):

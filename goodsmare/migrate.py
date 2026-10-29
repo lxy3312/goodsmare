@@ -34,7 +34,7 @@ from .sources import SOURCES
 from .store import Store
 
 DB_NAMES = ("goodsmare.db", "ritao.db")
-SETTINGS = ("interval", "request_gap", "proxy", "jpy_to_cny", "auto_rate", "buy", "message")
+SETTINGS = ("interval", "request_gap", "proxy", "jpy_to_cny", "auto_rate", "buy", "message", "push_mode", "network")
 FEED_COLS = ("source", "item_id", "title", "price", "old_price", "url", "image", "extra",
              "watch_id", "watch_name", "kind", "found_at")
 

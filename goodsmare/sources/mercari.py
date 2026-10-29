@@ -87,7 +87,7 @@ class Mercari(Source):
         headers = {"X-Platform": "web", "Accept": "application/json, text/plain, */*",
                    "Origin": "https://jp.mercari.com", "Referer": "https://jp.mercari.com/",
                    "DPoP": self._dpop(API, "POST")}
-        data = net.post(API, json_body=self.body(q), headers=headers).check("煤炉").json()
+        data = net.post(API, json_body=self.body(q), headers=headers, retries=1).check("煤炉").json()
         return self.parse(data)
 
     @staticmethod

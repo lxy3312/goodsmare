@@ -1,6 +1,7 @@
 """推送渠道。每种渠道一个函数：(渠道配置, 命中列表, 上下文) → 抛异常表示失败。
 
-几秒内一起查到的新货合成一次推送；Bark / ntfy / Telegram 这类手机通知逐条发，超出上限的合成一条汇总。
+每批命中按渠道排版；是否等待合并由扫描器的推送速度设置决定。
+Bark / ntfy / Telegram 这类手机通知逐条发，超出上限的合成一条汇总。
 内容尽量短：一件一行「价格 标题」，点开直接去买（设置里选了任意门，就是任意门的商品页），后面跟网站名。
 
 手机能连上本程序时（见 access.py），每次推送还会生成一个推送页（pages.py），消息开头放它的链接。
@@ -17,6 +18,7 @@ import smtplib
 import ssl
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from email.header import Header
 from email.mime.text import MIMEText
@@ -36,6 +38,7 @@ class Hit:
     kind: str = "new"              # new 上新 / drop 降价
     old_price: int | None = None
     quiet: bool = False            # 程序停过一阵后补查到的：记进上新，不一定推送
+    detected_at: float = field(default_factory=time.time)
 
 
 @dataclass
@@ -1062,15 +1065,18 @@ def send(ch: dict, hits: list[Hit], ctx: Ctx) -> None:
 
 def send_all(channels: list[dict], hits: list[Hit], ctx: Ctx) -> list[tuple[str, str]]:
     """返回失败列表 [(渠道名, 原因)]。"""
-    failures = []
-    for ch in channels:
-        if not ch.get("enabled", True):
-            continue
+    def one(ch):
         try:
             send(ch, hits, ctx)
         except Exception as e:  # 一个渠道挂了不影响别的
-            failures.append((ch.get("name") or CHANNEL_TYPES.get(ch.get("type"), (ch.get("type"),))[0], str(e)))
-    return failures
+            return ch.get("name") or CHANNEL_TYPES.get(ch.get("type"), (ch.get("type"),))[0], str(e)
+        return None
+
+    active = [ch for ch in channels if ch.get("enabled", True)]
+    if len(active) <= 1:
+        return [error for ch in active if (error := one(ch)) is not None]
+    with ThreadPoolExecutor(max_workers=min(16, len(active))) as pool:
+        return [error for error in pool.map(one, active) if error is not None]
 
 
 def sample_hits() -> list[Hit]:
